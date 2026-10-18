@@ -201,7 +201,7 @@ option build_thorough : bool = false
   -- "observe dependencies on options with tag 'content' or 'document'"
 
 option proof_cache : bool = true for build
-  -- "skip proofs of theories checked before with identical content ($ISABELLE_HOME_USER/proof_cache.db)"
+  -- "skip proofs of theories checked before with identical content ($ISABELLE_HOME_USER/proof_cache.db; not for build -f)"
 
 option build_hostname : string = ""
   -- "alternative hostname for build process (default $ISABELLE_HOSTNAME)"

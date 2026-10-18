@@ -49,7 +49,8 @@ object Proof_Cache {
     }
   }
 
-  // theory group options that make the build check real proofs
+  // theory group options that make the build check real proofs (only content options can
+  // affect the statements established by a successful check: they are part of the key)
   def certifies(options: Options): Boolean =
     !options.bool("skip_proofs") && !options.bool("quick_and_dirty") &&
       options.string("condition").isEmpty
@@ -122,7 +123,12 @@ object Proof_Cache {
 
   /* build session: Build_Job */
 
-  class Build_Session(info: Sessions.Info, base: Sessions.Base, progress: Progress) {
+  class Build_Session(
+    info: Sessions.Info,
+    base: Sessions.Base,
+    progress: Progress,
+    fresh_build: Boolean = false  // build -f: no lookup, but certify
+  ) {
     val enabled: Boolean = info.options.bool("proof_cache")
 
     // theories loaded from sources, with their group options and keys
@@ -134,7 +140,7 @@ object Proof_Cache {
       progress.echo_warning("Proof cache " + info.name + ": " + Exn.message(exn))
 
     val cached_theories: List[String] =
-      if (!enabled) Nil
+      if (!enabled || fresh_build) Nil
       else {
         try { lookup(theories.collect({ case (a, _, Some(key)) => (a, key) })) }
         catch { case exn: Throwable if !Exn.is_interrupt(exn) => error(exn); Nil }
@@ -142,10 +148,11 @@ object Proof_Cache {
 
     if (enabled && theories.nonEmpty) {
       progress.echo("Proof cache " + info.name + ": " + cached_theories.length + "/" +
-        theories.length + " theories trusted", verbose = cached_theories.isEmpty)
+        theories.length + " theories trusted" + if_proper(fresh_build, " (fresh build)"),
+        verbose = cached_theories.isEmpty)
     }
 
-    // exchange with the ML process: files "cached" (input) and "skipped" (output)
+    // exchange with the ML process: files "cached" (input) and "skipped" (output: cheating)
     private val dir: Option[Path] =
       if (!enabled) None
       else {
@@ -167,7 +174,7 @@ object Proof_Cache {
             if (skipped_path.is_file) split_lines(File.read(skipped_path)).filter(_.nonEmpty).toSet
             else Set.empty[String]
           val certified =
-            if (!skipped.forall(a => theories.exists(_._1 == a))) Nil  // oracle outside session
+            if (!skipped.forall(a => theories.exists(_._1 == a))) Nil  // cheating outside session
             else {
               theories.collect({ case (a, options, Some(key))
                 if !cached(a) && !skipped(a) && certifies(options) => (a, key) })

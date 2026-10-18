@@ -243,7 +243,8 @@ object Build_Job {
             Store.Sources.load(session_background.base, cache = store.cache.compress)
 
           val proof_cache =  // MP: proof cache
-            new Proof_Cache.Build_Session(info, session_background.base, progress)
+            new Proof_Cache.Build_Session(info, session_background.base, progress,
+              fresh_build = build_context.fresh_build)
 
           val env =
             Isabelle_System.Settings.env(

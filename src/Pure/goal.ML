@@ -189,7 +189,7 @@ fun prove_common ctxt fork_pri xs asms props tac =
     val stmt = Thm.weaken_sorts' ctxt' (Conjunction.mk_conjunction_balanced cprops);
 
     fun tac' args st =
-      if skip then ALLGOALS (Skip_Proof.cheat_tac ctxt) st before Skip_Proof.report ctxt
+      if skip then ALLGOALS (Proof_Cache.skip_tac ctxt) st before Skip_Proof.report ctxt  (*MP*)
       else tac args st;
     fun result () =
       (case SINGLE (tac' {prems = prems, context = ctxt'}) (init stmt) of
@@ -246,7 +246,7 @@ val quick_and_dirty = Config.declare_option_bool ("quick_and_dirty", \<^here>);
 
 fun prove_sorry ctxt xs asms prop tac =
   if Config.get ctxt quick_and_dirty then
-    prove ctxt xs asms prop (fn _ => ALLGOALS (Skip_Proof.cheat_tac ctxt))
+    prove ctxt xs asms prop (fn _ => ALLGOALS (Proof_Cache.sorry_tac ctxt))  (*MP*)
   else (if Future.proofs_enabled 1 then prove_future_pri ctxt ~2 else prove ctxt) xs asms prop tac;
 
 fun prove_sorry_global thy xs asms prop tac =

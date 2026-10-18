@@ -154,7 +154,8 @@ fun goal_cases_tac case_names : context_tactic =
 
 fun cheating int = CONTEXT_METHOD (fn _ => fn (ctxt, st) =>
   if int orelse Config.get ctxt quick_and_dirty then
-    TACTIC_CONTEXT ctxt (ALLGOALS (Skip_Proof.cheat_tac ctxt) st)
+    TACTIC_CONTEXT ctxt
+      (ALLGOALS ((if int then Proof_Cache.skip_tac else Proof_Cache.sorry_tac) ctxt) st)  (*MP*)
   else error "Cheating requires quick_and_dirty mode!");
 
 
