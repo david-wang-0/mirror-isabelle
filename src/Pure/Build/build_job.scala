@@ -242,9 +242,13 @@ object Build_Job {
           val session_sources =
             Store.Sources.load(session_background.base, cache = store.cache.compress)
 
+          val proof_cache =  // MP: proof cache
+            new Proof_Cache.Build_Session(info, session_background.base, progress)
+
           val env =
             Isabelle_System.Settings.env(
-              List("ISABELLE_ML_DEBUGGER" -> options.bool("ML_debugger").toString))
+              List("ISABELLE_ML_DEBUGGER" -> options.bool("ML_debugger").toString) :::
+                proof_cache.env)  // MP: proof cache
 
           val session_heaps =
             session_background.info.parent match {
@@ -615,6 +619,8 @@ object Build_Job {
 
           store.in_heaps_database(
             List(store_session), database_server, server = server, progress = progress)
+
+          proof_cache.finish(process_result.ok)  // MP: proof cache
 
           // messages
           process_result.err_lines.foreach(progress.echo(_))

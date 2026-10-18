@@ -22,7 +22,7 @@ sig
   val check_finished: Proof.context -> thm -> thm
   val finish: Proof.context -> thm -> thm
   val norm_result: Proof.context -> thm -> thm
-  val skip_proofs_enabled: unit -> bool
+  val skip_proofs_enabled: Proof.context -> bool  (*MP: proof cache*)
   val future_result: Proof.context -> thm future -> term -> thm
   val prove_internal: Proof.context -> cterm list -> cterm -> (thm list -> tactic) -> thm
   val prove_common: Proof.context -> int option -> string list -> term list -> term list ->
@@ -99,11 +99,11 @@ fun norm_result ctxt =
 
 (* scheduling parameters *)
 
-fun skip_proofs_enabled () =
+fun skip_proofs_enabled ctxt =
   let val skip = Options.default_bool "skip_proofs" in
     if Proofterm.any_proofs_enabled () andalso skip then
       (warning "Proof terms enabled -- cannot skip proofs"; false)
-    else skip
+    else skip orelse Proof_Cache.enabled ctxt  (*MP: proof cache*)
   end;
 
 
@@ -167,7 +167,7 @@ fun prove_common ctxt fork_pri xs asms props tac =
     val schematic = exists Term.is_schematic props;
     val immediate = is_none fork_pri;
     val future = Future.proofs_enabled 1 andalso not (Proofterm.any_proofs_enabled ());
-    val skip = not immediate andalso not schematic andalso future andalso skip_proofs_enabled ();
+    val skip = not immediate andalso not schematic andalso future andalso skip_proofs_enabled ctxt;
 
     val pos = Position.thread_data ();
     fun err msg =

@@ -105,6 +105,7 @@ object Sessions {
     theory_load_commands: Map[String, List[(Command_Span.Span, Symbol.Offset)]] = Map.empty,
     known_theories: Map[String, Document.Node.Entry] = Map.empty,
     known_loaded_files: Map[String, List[Path]] = Map.empty,
+    theory_keys: Map[String, SHA1.Digest] = Map.empty,  // MP: proof cache (with heap chain)
     overall_syntax: Outer_Syntax = Outer_Syntax.empty,
     imported_sources: List[(Path, SHA1.Digest)] = Nil,
     session_sources: List[(Path, SHA1.Digest)] = Nil,
@@ -301,6 +302,13 @@ object Sessions {
                   theory -> files.map(file => Path.explode(file.node))
                 }
 
+              val theory_keys =  // MP: proof cache
+                if (!inlined_files) deps_base.theory_keys
+                else {
+                  Proof_Cache.theory_keys(deps_base.theory_keys, dependencies.entries,
+                    dependencies.theories_adjunct.toMap, loaded_files, check_sources)
+                }
+
               val document_files =
                 for ((path1, path2) <- info.document_files)
                   yield info.dir + path1 + path2
@@ -454,6 +462,7 @@ object Sessions {
                   theory_load_commands = theory_load_commands,
                   known_theories = known_theories,
                   known_loaded_files = known_loaded_files,
+                  theory_keys = theory_keys,  // MP: proof cache
                   overall_syntax = dependencies.overall_syntax,
                   imported_sources = check_sources(imported_files),
                   session_sources = check_sources(session_files),
@@ -674,11 +683,12 @@ object Sessions {
         val meta_digest =
           SHA1.digest(
             (name, chapter, entry.parent, entry.directories, entry.options, entry.imports,
-              entry.theories_no_position, conditions, entry.document_theories_no_position).toString +
-            if_proper(entry.other_parents, entry.other_parents.toString))
+              entry.theories_no_position, conditions, entry.document_theories_no_position).toString)
 
         val meta_info =
-          SHA1.shasum_meta_info(meta_digest) ::: SHA1.shasum_sorted(build_prefs_digests)
+          SHA1.shasum_meta_info(meta_digest) ::: SHA1.shasum_sorted(build_prefs_digests) :::
+          (if (entry.other_parents.isEmpty) SHA1.no_shasum  // MP: multi-parent
+           else SHA1.shasum(SHA1.digest(entry.other_parents.toString), "other_parents"))
 
         val chapter_groups = chapter_defs(chapter).groups
         val groups = chapter_groups ::: entry.groups.filterNot(chapter_groups.contains)
@@ -686,7 +696,8 @@ object Sessions {
         Info(name, chapter, dir_selected, entry.pos, groups, session_path,
           entry.parent, entry.description, directories, session_options, session_prefs,
           entry.imports, theories, global_theories, entry.document_theories, document_files,
-          export_files, entry.export_classpath, meta_info, other_parents = entry.other_parents)
+          export_files, entry.export_classpath, meta_info,
+          other_parents = entry.other_parents)  // MP: multi-parent
       }
       catch {
         case ERROR(msg) =>
@@ -716,12 +727,12 @@ object Sessions {
     export_files: List[(Path, Int, List[String])],
     export_classpath: List[String],
     meta_info: SHA1.Shasum,
-    other_parents: List[String] = Nil,  // multi-parent session (before Structure.make)
-    build_prereqs: List[String] = Nil  // merge session: required sessions without heap
+    other_parents: List[String] = Nil,  // MP: multi-parent session (before Structure.make)
+    build_prereqs: List[String] = Nil  // MP: merge session: required sessions without heap
   ) {
     def deps: List[String] = parent.toList ::: imports
 
-    def is_merge: Boolean = build_prereqs.nonEmpty
+    def is_merge: Boolean = build_prereqs.nonEmpty  // MP: multi-parent
 
     def deps_base(session_bases: String => Base): Base = {
       val parent_base = session_bases(parent.getOrElse(""))
@@ -869,105 +880,8 @@ object Sessions {
         root_infos.toList
       }
 
-      /* multi-parent sessions: linear heap chain via synthesized merge sessions */
-
-      val all_infos = {
-        val raw_infos = root_infos ::: infos
-        val raw_info = raw_infos.map(info => info.name -> info).toMap
-        val global_names =
-          Thy_Header.bootstrap_global_theories.map(_._1).toSet ++
-            raw_infos.flatMap(_.global_theories)
-
-        val merges = new mutable.LinkedHashMap[String, Info]
-        def get_info(name: String): Option[Info] = raw_info.get(name) orElse merges.get(name)
-
-        var covered_cache = Map.empty[String, List[String]]
-        def covered(name: String, seen: Set[String] = Set.empty): List[String] =
-          covered_cache.get(name) match {
-            case Some(res) => res
-            case None if seen(name) => Nil  // cycle: reported via session graph below
-            case None =>
-              val res =
-                get_info(name) match {
-                  case None => Nil
-                  case Some(info) =>
-                    (info.parent.toList ::: info.other_parents ::: info.build_prereqs)
-                      .flatMap(covered(_, seen + name)).appended(name).distinct
-                }
-              covered_cache += (name -> res)
-              res
-          }
-
-        def qualify(session: String, thy: String): String = {
-          val thy_name = Thy_Header.import_name(thy)
-          if (Long_Name.is_qualified(thy_name) || global_names(thy_name)) thy_name
-          else Long_Name.qualify(session, thy_name)
-        }
-
-        def merge(info: Info)(left: String, right: String): String = {
-          for (a <- List(left, right) if get_info(a).isEmpty) {
-            error("Bad parent session " + quote(a) + " for " + quote(info.name) +
-              Position.here(info.pos))
-          }
-          // heap content of a session: theories of the non-merge sessions it covers
-          def content(a: String): List[String] = covered(a).filterNot(get_info(_).get.is_merge)
-          val content_left = content(left)
-          val content_right = content(right)
-          val sessions = content_right.filterNot(content_left.contains)
-
-          if (sessions.isEmpty) left
-          else if (content_left.forall(content_right.contains)) right
-          else {
-            val name = left + "+" + right
-            if (raw_info.isDefinedAt(name)) {
-              error("Merge session " + quote(name) + " for " + quote(info.name) +
-                " clashes with existing session" + Position.here(raw_info(name).pos))
-            }
-            if (!merges.isDefinedAt(name)) {
-              val left_info = get_info(left).get
-              val right_info = get_info(right).get
-              val skip = List("skip_proofs=true", "document=false")
-              val entry =
-                Session_Entry(pos = info.pos, name = name, parent = Some(left),
-                  description = "Merge of sessions " + quote(left) + " and " + quote(right) +
-                    " (proofs skipped)",
-                  options = skip.map(Options.Spec.make), imports = List(right))
-              val info0 =
-                Info.make(entry, dir = right_info.dir, options = options, options0 = options0,
-                  chapter_defs = chapter_defs, chapter = left_info.chapter)
-              val theories =
-                for {
-                  a <- sessions
-                  (opts, thys) <- get_info(a).get.theories
-                } yield (opts ++ skip.map(Options.Spec.make),
-                  thys.map({ case (thy, pos) => (qualify(a, thy), pos) }))
-              val merge_digest =
-                SHA1.digest(sessions.map(a => (a, get_info(a).get.meta_info.toString)).toString)
-              merges(name) =
-                info0.copy(theories = theories, build_prereqs = List(right),
-                  meta_info = info0.meta_info ::: SHA1.shasum(merge_digest, "merge_sessions"))
-            }
-            name
-          }
-        }
-
-        val infos1 =
-          for (info <- raw_infos) yield {
-            if (info.other_parents.isEmpty) info
-            else {
-              try {
-                val parent = info.other_parents.foldLeft(info.parent.get)(merge(info))
-                info.copy(parent = Some(parent), other_parents = Nil)
-              }
-              catch {
-                case ERROR(msg) =>
-                  error(msg + "\nThe error(s) above occurred in session entry " +
-                    quote(info.name) + Position.here(info.pos))
-              }
-            }
-          }
-        infos1 ::: merges.valuesIterator.toList
-      }
+      val all_infos =  // MP: multi-parent sessions
+        Sessions_Multiparent.make_infos(root_infos ::: infos, options, options0, chapter_defs)
 
       val info_graph =
         all_infos.foldLeft(Graph.string[Info]) {
@@ -1004,7 +918,7 @@ object Sessions {
         }
       }
 
-      val heap_graph = augment_graph(info_graph, "parent", _.parent)
+      val heap_graph = augment_graph(info_graph, "parent", _.parent)  // MP: multi-parent
       val build_graph = augment_graph(heap_graph, "parent", _.build_prereqs)
       val imports_graph = augment_graph(build_graph, "imports", _.imports)
 
@@ -1015,7 +929,7 @@ object Sessions {
         (for {
           session <- imports_graph.topological_order.iterator
           info = info_graph.get_node(session)
-          if !info.is_merge
+          if !info.is_merge  // MP: multi-parent
           dir <- info.dirs.iterator
         } yield (info, dir)).foldLeft(Map.empty[JFile, String]) {
             case (dirs, (info, dir)) =>
@@ -1048,7 +962,7 @@ object Sessions {
           }
 
       new Structure(chapter_defs, session_prefs, session_positions, session_directories,
-        global_theories, build_graph, imports_graph, heap_graph)
+        global_theories, build_graph, imports_graph, heap_graph)  // MP: multi-parent
     }
   }
 
@@ -1060,7 +974,7 @@ object Sessions {
     val global_theories: Map[String, String],
     val build_graph: Graph[String, Info],
     val imports_graph: Graph[String, Info],
-    val heap_graph: Graph[String, Info]  // parent chain only: sub-graph of build_graph
+    val heap_graph: Graph[String, Info]  // MP: parent chain only: sub-graph of build_graph
   ) {
     sessions_structure =>
 
@@ -1146,7 +1060,7 @@ object Sessions {
         graph.restrict(graph.all_preds(sessions).toSet)
       }
 
-      val build_graph1 = restrict(build_graph)
+      val build_graph1 = restrict(build_graph)  // MP: multi-parent
       new Structure(chapter_defs, session_prefs, session_positions, session_directories,
         global_theories, build_graph1, restrict(imports_graph),
         heap_graph.restrict(build_graph1.defined))
@@ -1181,7 +1095,8 @@ object Sessions {
     def build_requirements(ss: List[String]): List[String] = build_graph.all_preds_rev(ss)
     def build_topological_order: List[String] = build_graph.topological_order
 
-    def heap_requirements(ss: List[String]): List[String] = heap_graph.all_preds_rev(ss)
+    def heap_requirements(ss: List[String]): List[String] =  // MP: multi-parent
+      heap_graph.all_preds_rev(ss)
 
     def imports_selection(sel: Selection): List[String] = selected(imports_graph, sel)
     def imports_descendants(ss: List[String]): List[String] = imports_graph.all_succs(ss)
@@ -1242,7 +1157,7 @@ object Sessions {
     groups: List[String] = Nil,
     path: String = ".",
     parent: Option[String] = None,
-    other_parents: List[String] = Nil,
+    other_parents: List[String] = Nil,  // MP: multi-parent
     description: String = "",
     options: List[Options.Spec] = Nil,
     imports: List[String] = Nil,
@@ -1332,7 +1247,7 @@ object Sessions {
       command(SESSION) ~!
         (position(session_name) ~ groups ~ in_path(".") ~
           ($$$("=") ~!
-            (rep(session_name ~! $$$("+") ^^ { case x ~ _ => x }) ~ description ~
+            (rep(session_name ~! $$$("+") ^^ { case x ~ _ => x }) ~ description ~  // MP
               (($$$(OPTIONS) ~! options ^^ { case _ ~ x => x }) | success(Nil)) ~
               (($$$(SESSIONS) ~! rep1(session_name)  ^^ { case _ ~ x => x }) | success(Nil)) ~
               (($$$(DIRECTORIES) ~! rep1(path) ^^ { case _ ~ x => x }) | success(Nil)) ~
@@ -1343,7 +1258,7 @@ object Sessions {
               opt(export_classpath)))) ^^
         { case _ ~ ((a, pos) ~ b ~ c ~ (_ ~ (d ~ e ~ f ~ g ~ h ~ i ~ j ~ k ~ l ~ m))) =>
             Session_Entry(pos = pos, name = a, groups = b, path = c, parent = d.headOption,
-              other_parents = d.drop(1), description = e,
+              other_parents = d.drop(1), description = e,  // MP: multi-parent
               options = f, imports = g, directories = h, theories = i, document_theories = j,
               document_files = k, export_files = l, export_classpath = m.getOrElse(Nil)) }
     }

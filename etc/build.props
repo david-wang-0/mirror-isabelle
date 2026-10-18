@@ -71,8 +71,10 @@ sources = \
   src/Pure/Build/export.scala \
   src/Pure/Build/export_theory.scala \
   src/Pure/Build/file_format.scala \
+  src/Pure/Build/proof_cache.scala \
   src/Pure/Build/resources.scala \
   src/Pure/Build/sessions.scala \
+  src/Pure/Build/sessions_multiparent.scala \
   src/Pure/Build/store.scala \
   src/Pure/Concurrent/consumer_thread.scala \
   src/Pure/Concurrent/counter.scala \

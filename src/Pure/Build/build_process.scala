@@ -127,7 +127,7 @@ object Build_Process {
       make(
         sessions_structure.build_graph.iterator.foldLeft(graph) {
           case (graph0, (name, (info, _))) =>
-            val deps = sessions_structure.build_graph.imm_preds(name).toList
+            val deps = sessions_structure.build_graph.imm_preds(name).toList  // MP: prereqs
             val prefs = info.session_prefs
             val ancestors = sessions_structure.build_requirements(deps)
             val sources_shasum = build_context.deps.sources_shasum(name)

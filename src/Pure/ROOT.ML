@@ -216,6 +216,7 @@ ML_file_no_debug "Isar/runtime.ML";
 ML_file "PIDE/execution.ML";
 ML_file "ML/ml_compiler.ML";
 
+ML_file "proof_cache.ML";  (*MP: proof cache*)
 ML_file "skip_proof.ML";
 ML_file "goal.ML";
 

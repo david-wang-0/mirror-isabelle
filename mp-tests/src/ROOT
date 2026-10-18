@@ -1,0 +1,38 @@
+(* Test sessions for multi-parent sessions and the proof cache: see ../run.py *)
+
+session MPT_B in B = HOL +
+  theories X
+
+session MPT_C in C = HOL +
+  theories Y
+
+session MPT_D in D = MPT_B + MPT_C +
+  theories Z
+
+session MPT_D2 in D2 = MPT_B + MPT_C +
+  theories Z2
+
+session MPT_E in E = HOL +
+  theories W
+
+session MPT_F in F = MPT_B + MPT_C + MPT_E +
+  theories V
+
+session MPT_G in G = MPT_D + MPT_B +
+  theories U
+
+session MPT_K in K = MPT_D + MPT_F +
+  theories K0
+
+session MPT_S in S = HOL +
+  sessions MPT_C
+  theories T
+
+session MPT_BAD in Bad = HOL +
+  theories Good0 Bad
+
+session MPT_FC in FC = MPT_B + MPT_BAD +
+  theories FC0
+
+session MPT_W in Wr = HOL +
+  theories G0

@@ -240,6 +240,7 @@ fun begin_theory master_dir {name, imports, keywords} parents =
   let
     val thy =
       Theory.begin_theory name parents
+      |> Proof_Cache.begin_theory (#1 name)  (*MP: proof cache*)
       |> map_data (fn _ => (Path.explode (File.symbolic_path master_dir), imports, []))
       |> Thy_Header.add_keywords keywords;
     val ctxt = Proof_Context.init_global thy;

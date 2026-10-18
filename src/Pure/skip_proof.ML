@@ -26,7 +26,8 @@ fun report ctxt =
 (* oracle setup *)
 
 val (_, make_thm_cterm) =
-  Theory.setup_result (Thm.add_oracle (Binding.make ("skip_proof", \<^here>), I));
+  Theory.setup_result (Thm.add_oracle (Binding.make ("skip_proof", \<^here>), I))
+  ||> (fn oracle => Proof_Cache.skipped o oracle);  (*MP: proof cache*)
 
 fun make_thm thy prop = make_thm_cterm (Thm.global_cterm_of thy prop);
 
@@ -37,7 +38,10 @@ fun cheat_tac ctxt = SUBGOAL (fn (goal, i) =>
   let
     val thy = Proof_Context.theory_of ctxt;
     val assms = Assumption.all_assms_of ctxt;
-    val cheat = make_thm thy (Logic.list_implies (map Thm.term_of assms, goal));
+    val cheat =
+      (if Config.get ctxt Proof_Cache.cached_proof  (*MP: proof cache*)
+       then Proof_Cache.make_thm_cterm o Thm.global_cterm_of thy else make_thm thy)
+        (Logic.list_implies (map Thm.term_of assms, goal));
     val thm = Drule.implies_elim_list cheat (map Thm.assume assms);
   in PRIMITIVE (Drule.with_subgoal i (Thm.elim_implies thm)) end);
 

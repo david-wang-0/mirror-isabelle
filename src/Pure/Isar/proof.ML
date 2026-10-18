@@ -1187,7 +1187,7 @@ fun terminal_proof qeds initial terminal state =
     val initial' = apfst check_closure initial;
     val terminal' = (apfst o Option.map o apfst) check_closure terminal;
   in
-    if Goal.skip_proofs_enabled () andalso not (is_relevant state) then
+    if Goal.skip_proofs_enabled ctxt andalso not (is_relevant state) then  (*MP: ctxt*)
       state
       |> proof (SOME (Method.sorry_text true, #2 initial'))
       |> Seq.maps_results (qeds (#2 (#2 initial), (NONE, #2 terminal)))

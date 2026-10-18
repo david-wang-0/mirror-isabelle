@@ -374,7 +374,7 @@ class Store private(
     val logic_name = Isabelle_System.default_logic(logic)
 
     session_background.sessions_structure.selection(logic_name).
-      heap_requirements(List(logic_name)).
+      heap_requirements(List(logic_name)).  // MP: multi-parent
       map(name => store.get_session(name).the_heap)
   }
 
