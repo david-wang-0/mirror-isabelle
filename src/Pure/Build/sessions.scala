@@ -909,15 +909,20 @@ object Sessions {
             error("Bad parent session " + quote(a) + " for " + quote(info.name) +
               Position.here(info.pos))
           }
-          val covered_left = covered(left)
-          val covered_right = covered(right)
-          val sessions =
-            covered_right.filterNot(a => covered_left.contains(a) || get_info(a).get.is_merge)
+          // heap content of a session: theories of the non-merge sessions it covers
+          def content(a: String): List[String] = covered(a).filterNot(get_info(_).get.is_merge)
+          val content_left = content(left)
+          val content_right = content(right)
+          val sessions = content_right.filterNot(content_left.contains)
 
           if (sessions.isEmpty) left
-          else if (covered_left.forall(covered_right.contains)) right
+          else if (content_left.forall(content_right.contains)) right
           else {
             val name = left + "+" + right
+            if (raw_info.isDefinedAt(name)) {
+              error("Merge session " + quote(name) + " for " + quote(info.name) +
+                " clashes with existing session" + Position.here(raw_info(name).pos))
+            }
             if (!merges.isDefinedAt(name)) {
               val left_info = get_info(left).get
               val right_info = get_info(right).get
