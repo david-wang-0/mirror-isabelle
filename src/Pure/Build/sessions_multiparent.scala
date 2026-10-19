@@ -2,7 +2,7 @@
 
 Multi-parent sessions (Isabelle2025-2-mp): "session D = B + C + ..." keeps a linear
 heap chain via synthesized merge sessions "B+C" (parent B, re-loading the theories of
-C's chain that are not in B's chain), see MP-README.md.
+C's chain that are not in B's chain), see docs/multiparent/design.md.
 */
 
 package isabelle

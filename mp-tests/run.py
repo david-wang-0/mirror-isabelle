@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Test suite for multi-parent sessions and the proof cache (see MP-README.md).
+"""Test suite for multi-parent sessions and the proof cache
+(see docs/multiparent/testing.md).
 
-Usage: mp-tests/run.sh [-l] [--slow] [CASE ...]
+Usage: mp-tests/run.sh [-l] [--slow] [--isabelle TOOL] [CASE ...]
+
+The Isabelle tool is TOOL, else $ISABELLE_TOOL, else bin/isabelle of this
+repository; it runs with the Isabelle settings variables of the calling
+environment removed, so that it computes its own (ISABELLE_HOME etc.).
 
 Copies src/ to work/ (git-ignored), substituting a fresh @NONCE@ so that the
 theories carrying it are new to the proof cache, then runs the cases in CASES
-order (all, or the given ones) with bin/isabelle-mp on the normal user heaps.
+order (all, or the given ones) on the normal user heaps of that Isabelle.
 Cases registered with @slow_case run only with --slow or when named.
 Each assertion prints a PASS or FAIL line; the exit code is 1 if any failed.
 
@@ -25,7 +30,7 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ISABELLE_HOME = os.path.dirname(HERE)
-ISABELLE = os.path.join(ISABELLE_HOME, "bin", "isabelle-mp")
+ISABELLE = os.environ.get("ISABELLE_TOOL") or os.path.join(ISABELLE_HOME, "bin", "isabelle")
 SRC = os.path.join(HERE, "src")
 WORK = os.path.join(HERE, "work")
 
@@ -41,9 +46,20 @@ CACHED = "Pure.cached_proof"
 
 # utilities
 
+# inherited settings of another Isabelle installation would override the tool's own
+CLEAR_ENV = ["ISABELLE_HOME", "ISABELLE_SETTINGS_PRESENT", "ISABELLE_IDENTIFIER",
+             "ISABELLE_HOME_USER", "ISABELLE_TOOL"]
+
+
+def tool_env(env=None):
+    result = {k: v for k, v in os.environ.items() if k not in CLEAR_ENV}
+    result.update(env or {})
+    return result
+
+
 def isabelle(*args, env=None):
     proc = subprocess.run([ISABELLE, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, env=None if env is None else {**os.environ, **env})
+                          text=True, env=tool_env(env))
     return proc.returncode, proc.stdout
 
 
@@ -513,7 +529,7 @@ def case_robustness():
             open(path, "w").write(text)
         n = {s: len(cache_rows(s + "." + s[len("MPT_"):])) for s in ["MPT_CA", "MPT_CB"]}
         procs = [subprocess.Popen([ISABELLE, *build_args(s)], stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, text=True)
+                                  stderr=subprocess.STDOUT, text=True, env=tool_env())
                  for s in ["MPT_CA", "MPT_CB"]]
         for s, p in zip(["MPT_CA", "MPT_CB"], procs):
             out = p.communicate()[0]
@@ -585,7 +601,7 @@ def case_afp_demo():
     """AFP_Demo_Merge = Word_Lib + Automatic_Refinement vs. baseline with sessions"""
     def afp_build(*args):
         cmd = ["build", "-d", AFP_DEMO, "-v", *BUILD_OPTIONS, *args]
-        print("  $ bin/isabelle-mp " + " ".join(cmd).replace(AFP_DEMO, "mp-tests/afp-demo"))
+        print("  $ isabelle " + " ".join(cmd).replace(AFP_DEMO, "mp-tests/afp-demo"))
         sys.stdout.flush()
         rc, out = isabelle(*cmd)
         return rc, out
@@ -661,7 +677,15 @@ def setup():
 
 
 def main(args):
+    global ISABELLE
     names = {f.__name__[len("case_"):]: f for f in CASES}
+    if "--isabelle" in args:
+        i = args.index("--isabelle")
+        if i + 1 >= len(args):
+            print("Missing argument for --isabelle")
+            return 2
+        ISABELLE = os.path.abspath(args[i + 1])
+        args = args[:i] + args[i + 2:]
     if args[:1] == ["-l"]:
         print("\n".join(n + (" (--slow)" if f.__name__ in SLOW else "") for n, f in names.items()))
         return 0
@@ -671,6 +695,11 @@ def main(args):
     if unknown:
         print("Unknown case(s): " + ", ".join(unknown) + "\nCases: " + ", ".join(names))
         return 2
+    if not os.access(ISABELLE, os.X_OK):
+        print("Isabelle tool not executable: " + ISABELLE)
+        return 2
+    print("Isabelle tool: %s (ISABELLE_HOME=%s, ISABELLE_HOME_USER=%s)" % (
+        ISABELLE, getenv("ISABELLE_HOME"), getenv("ISABELLE_HOME_USER")))
     setup()
     for f in CASES:
         name = f.__name__[len("case_"):]
