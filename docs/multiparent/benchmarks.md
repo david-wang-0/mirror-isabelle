@@ -95,8 +95,8 @@ Heap saving adds about 3–11 s to a merge.
 
 `Word_Lib` (A) and `Automatic_Refinement` (B) combined; the sessions are described in
 [testing.md](testing.md#afp-demonstration). This is the slow test case `afp_demo`, which
-runs these commands (in this order; `-d mp-tests/afp-demo -v -o threads=8` on every call)
-and prints the table:
+runs these commands (in this order; `-d mp-tests/work/afp-demo -v -o threads=8` on every
+call, the copy with the run's nonce) and prints the table:
 
 ```
 isabelle build -c -b -o proof_cache=false Word_Lib Automatic_Refinement

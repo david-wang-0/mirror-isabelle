@@ -7,11 +7,11 @@ mp-tests/run.sh [-l] [--slow] [--isabelle TOOL] [CASE ...]
 ```
 
 `mp-tests/run.sh` (Python 3, standard library only) copies `mp-tests/src` (ROOT and
-theories of the `MPT_*` sessions) to `mp-tests/work` (git-ignored), with a fresh nonce in
-the theories that must be new to the proof cache, then runs the cases (all default cases,
-or those named; `--slow` adds the slow ones; `-l` lists them) with
-`isabelle build -d mp-tests/work -v -o threads=8` on the normal user heaps of that
-Isabelle.
+theories of the `MPT_*` sessions) to `mp-tests/work` (git-ignored), and
+`mp-tests/afp-demo` to `mp-tests/work/afp-demo`, with a fresh nonce in the theories that
+must be new to the proof cache, then runs the cases (all default cases, or those named;
+`--slow` adds the slow ones; `-l` lists them) with
+`isabelle build -d mp-tests/work -v -o threads=8` on the normal user heaps of that Isabelle.
 
 The Isabelle tool is `--isabelle TOOL`, else `$ISABELLE_TOOL`, else `bin/isabelle` of this
 repository; the suite prints which one it uses, with its `ISABELLE_HOME` and
@@ -92,9 +92,11 @@ note that without `build_thorough` a change of options alone does not rebuild a 
 ## AFP demonstration
 
 `mp-tests/afp-demo`, run by `mp-tests/run.sh --slow afp_demo` (or just
-`mp-tests/run.sh afp_demo`). It needs the AFP for Isabelle2025-2 as session roots: add the
-AFP `thys` directory to `$ISABELLE_HOME_USER/ROOTS` of this Isabelle. Registering the AFP
-as a component instead (`etc/components`) also loads the AFP tools component, whose
+`mp-tests/run.sh afp_demo`) from a copy in `mp-tests/work/afp-demo`, with the run's nonce in `Demo`, so
+that `Demo` is new to the proof cache in every run (a cached `Demo` would give its own
+facts `cached_proof`). It needs the AFP for Isabelle2025-2 as session roots: add the AFP
+`thys` directory to `$ISABELLE_HOME_USER/ROOTS` of this Isabelle. Registering the AFP as a
+component instead (`etc/components`) also loads the AFP tools component, whose
 `afp_tools.jar` is rebuilt against this Isabelle's `isabelle.jar` (its build shasum covers
 `$ISABELLE_SCALA_JAR`) and reports a version mismatch for a changed identifier; the AFP
 admin tools (`isabelle afp_*`) are not needed here.

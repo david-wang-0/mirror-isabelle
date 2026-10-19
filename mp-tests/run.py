@@ -584,7 +584,8 @@ def case_multiparent_corners():
           "parent order: same theorems", "\n".join(thms))
 
 
-AFP_DEMO = os.path.join(HERE, "afp-demo")
+# copied to work/afp-demo by setup(), with the nonce: Demo is new to the proof cache
+AFP_DEMO = os.path.join(WORK, "afp-demo")
 AFP_A, AFP_B = "Word_Lib", "Automatic_Refinement"
 AFP_MERGE = AFP_A + "+" + AFP_B
 
@@ -601,7 +602,7 @@ def case_afp_demo():
     """AFP_Demo_Merge = Word_Lib + Automatic_Refinement vs. baseline with sessions"""
     def afp_build(*args):
         cmd = ["build", "-d", AFP_DEMO, "-v", *BUILD_OPTIONS, *args]
-        print("  $ isabelle " + " ".join(cmd).replace(AFP_DEMO, "mp-tests/afp-demo"))
+        print("  $ isabelle " + " ".join(cmd).replace(AFP_DEMO, "mp-tests/work/afp-demo"))
         sys.stdout.flush()
         rc, out = isabelle(*cmd)
         return rc, out
@@ -665,15 +666,22 @@ def case_afp_demo():
 
 # main
 
+def copy_tree(src, dst, nonce):
+    for root, _, files in os.walk(src):
+        target = os.path.join(dst, os.path.relpath(root, src))
+        os.makedirs(target, exist_ok=True)
+        for name in files:
+            if name.endswith(".out"):
+                continue
+            text = open(os.path.join(root, name)).read()
+            open(os.path.join(target, name), "w").write(text.replace("@NONCE@", nonce))
+
+
 def setup():
     shutil.rmtree(WORK, ignore_errors=True)
     nonce = uuid.uuid4().hex
-    for root, _, files in os.walk(SRC):
-        target = os.path.join(WORK, os.path.relpath(root, SRC))
-        os.makedirs(target, exist_ok=True)
-        for name in files:
-            text = open(os.path.join(root, name)).read()
-            open(os.path.join(target, name), "w").write(text.replace("@NONCE@", nonce))
+    copy_tree(SRC, WORK, nonce)
+    copy_tree(os.path.join(HERE, "afp-demo"), AFP_DEMO, nonce)
 
 
 def main(args):
