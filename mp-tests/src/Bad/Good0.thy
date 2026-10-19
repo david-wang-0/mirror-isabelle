@@ -1,6 +1,6 @@
 theory Good0 imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 lemma good0: "(n::nat) + 0 = n" by simp
 

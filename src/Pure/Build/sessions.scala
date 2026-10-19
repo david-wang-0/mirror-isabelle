@@ -306,7 +306,10 @@ object Sessions {
                 if (!inlined_files) deps_base.theory_keys
                 else {
                   Proof_Cache.theory_keys(deps_base.theory_keys, dependencies.entries,
-                    dependencies.theories_adjunct.toMap, loaded_files, check_sources)
+                    dependencies.theories_adjunct.toMap, loaded_files, check_sources,
+                    normalize = info.options.bool("proof_cache") &&  // MP: proof cache
+                      info.options.bool("proof_cache_normalize"),
+                    get_syntax = dependencies.get_syntax, resources = resources)
                 }
 
               val document_files =

@@ -8,8 +8,9 @@ An **experimental** fork of the [Isabelle2025-2](https://isabelle.in.tum.de) rel
   of the right parent's chain on top of the left parent's heap.
 - **Per-theory proof cache**: a theory whose content (sources, imports, content options,
   ML system) was checked with real proofs by an earlier successful build is loaded with
-  its proofs skipped, via the new oracle `Pure.cached_proof`. Merges rely on it, and so do
-  `sessions` imports and rebuilt sessions.
+  its proofs skipped, via the new oracle `Pure.cached_proof`; edits to comments, white
+  space and document text (`text`, `section`, …) keep the cache valid. Merges rely on it,
+  and so do `sessions` imports and rebuilt sessions.
 
 ```
 session Utils = HOL + theories Lists

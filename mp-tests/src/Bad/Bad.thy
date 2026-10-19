@@ -1,6 +1,6 @@
 theory Bad imports Good0 begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 lemma bad: "(n::nat) + 1 = n" by simp
 

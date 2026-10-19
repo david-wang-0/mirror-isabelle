@@ -1,6 +1,7 @@
 theory Q2 imports Main begin
 
-(* nonce: @NONCE@ -- tool-like internal use of the skip_proof oracle: certified *)
+ML \<open>val nonce = "@NONCE@"\<close>
+(* nonce -- tool-like internal use of the skip_proof oracle: certified *)
 
 ML \<open>
   val q2_thm = Skip_Proof.make_thm \<^theory> \<^prop>\<open>(0::nat) < 1\<close>;

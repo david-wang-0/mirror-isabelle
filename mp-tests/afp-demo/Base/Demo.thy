@@ -2,7 +2,8 @@ theory Demo
   imports Word_Lib.Word_Lib_Sumo Automatic_Refinement.Automatic_Refinement
 begin
 
-(* nonce: @NONCE@ -- new to the proof cache in every run: its own facts carry no oracle *)
+ML \<open>val nonce = "@NONCE@"\<close>
+(* nonce -- new to the proof cache in every run: its own facts carry no oracle *)
 
 text \<open>Machine words and refinement relators: one fact from each parent.\<close>
 

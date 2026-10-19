@@ -1,6 +1,6 @@
 theory IA imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 definition ia :: nat where "ia = 1"
 

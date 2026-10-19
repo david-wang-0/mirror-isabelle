@@ -1,6 +1,7 @@
 theory Q1 imports Main begin
 
-(* nonce: @NONCE@ -- sorry under a theory-local quick_and_dirty: never certified *)
+ML \<open>val nonce = "@NONCE@"\<close>
+(* nonce -- sorry under a theory-local quick_and_dirty: never certified *)
 
 declare [[quick_and_dirty]]
 

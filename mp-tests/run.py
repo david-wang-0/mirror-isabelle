@@ -525,7 +525,8 @@ def case_robustness():
     for rnd in range(3):
         for d in ["CA", "CB"]:
             path = os.path.join(WORK, d, d + ".thy")
-            text = re.sub(r"nonce: \S+", "nonce: " + uuid.uuid4().hex, open(path).read())
+            text = re.sub(r'val nonce = "[^"]*"', 'val nonce = "%s"' % uuid.uuid4().hex,
+                          open(path).read())
             open(path, "w").write(text)
         n = {s: len(cache_rows(s + "." + s[len("MPT_"):])) for s in ["MPT_CA", "MPT_CB"]}
         procs = [subprocess.Popen([ISABELLE, *build_args(s)], stdout=subprocess.PIPE,
@@ -582,6 +583,84 @@ def case_multiparent_corners():
     thms = [open(os.path.join(WORK, d, "thms.out")).read() for d in ["O1", "O2"]]
     check(thms[0] == thms[1] and thms[0].strip() != "",
           "parent order: same theorems", "\n".join(thms))
+
+
+@case
+def case_normalize():
+    # proof_cache_normalize (default): keys ignore white space, comments and the document
+    # commands of Pure; NA imports NK, which declares the user command "mysection"
+    def rows(thy):
+        return len(cache_rows("MPT_NRM." + thy))
+
+    def run(what, n, extra=()):
+        rc, out = build(*extra, "MPT_NRM")
+        check_ok(rc, out, "MPT_NRM " + what)
+        check_trusted(out, "MPT_NRM", n, 2)
+        return out
+
+    k0, a0 = rows("NK"), rows("NA")  # rows accumulate over runs
+    run("(first build)", 0)
+    check(rows("NK") == k0 + 1 and rows("NA") == a0 + 1, "NK, NA certified")
+
+    na = "Nrm/NA.thy"
+    hits = [
+        ("comment edit", "(* comment: edited", "(* comment, changed: edited"),
+        ("indentation", "  by (simp add: na_def)", "      by (simp add: na_def)"),
+        ("blank lines", "definition na ::", "\n\n\ndefinition na ::"),
+        ("text body edit", "Body text: edited", "Body text, changed: edited"),
+        ("inserted section", "lemma na_pos:", "section \\<open>Inserted\\<close>\n\nlemma na_pos:"),
+        ("new text", "\nend\n", "\ntext \\<open>New paragraph.\\<close>\n\nend\n")]
+    for what, old, new in hits:  # cumulative
+        edit(na, old, new)
+        run("after " + what, 2)
+        check(rows("NA") == a0 + 1, what + ": hit, no new row")
+
+    # the option is not a content option: a source edit makes the build run
+    comment = (na, "(* nonce -- edited", "(* nonce, changed -- edited")
+    edit(*comment)
+    run("with proof_cache_normalize=false after a comment edit", 0,
+        extra=("-o", "proof_cache_normalize=false"))
+    check(rows("NK") == k0 + 2 and rows("NA") == a0 + 2,
+          "proof_cache_normalize=false: other key scheme (NK misses too), new rows")
+    undo_edit(*comment)
+    run("with proof_cache_normalize=true after reverting the comment", 2)
+    check(rows("NA") == a0 + 2, "back to normalised keys: hit, no new row")
+    for what, old, new in reversed(hits):
+        undo_edit(na, old, new)
+
+    misses = [
+        ("lemma statement", "\"na > 0\"", "\"na > 0 \\<and> True\""),
+        ("method text", "by (simp add: na_def)", "by (auto simp add: na_def)"),
+        ("nonce string", "val nonce = \"", "val nonce = \"x"),
+        ("comment inside ML", "(* ML comment *)", "(* ML comment, changed *)"),
+        ("comment inside a term", "term comment", "term comment, changed"),
+        ("user document command body", "Heading body", "Heading body, changed")]
+    for what, old, new in misses:
+        n = rows("NA")
+        edit(na, old, new)
+        run("after editing the " + what, 1)
+        check(rows("NA") == n + 1, what + ": miss, re-certified")
+        undo_edit(na, old, new)
+    run("after reverting", 2)
+
+    nk = ("Nrm/NK.thy", "\"mysection\" :: document_heading", "\"mysection\" :: document_body")
+    edit(*nk)
+    run("after editing the keyword declaration in NK", 0)
+    undo_edit(*nk)
+    run("after reverting NK", 2)
+
+    bad = (na, "(* comment: edited by case_normalize *)", "(* comment: edited by case_normalize")
+    edit(*bad)
+    rc, out = build("MPT_NRM")
+    check(rc != 0 and "MPT_NRM FAILED" in out and "Malformed command syntax" in out,
+          "unclosed comment: the build fails normally", "\n".join(out.splitlines()[-15:]))
+    rc, out = isabelle("sessions", "-d", WORK, "MPT_NRM")
+    check(rc == 0 and "MPT_NRM" in out, "unclosed comment: sessions still lists MPT_NRM", out)
+    rc, out = build("-n", "MPT_NRM")
+    check("Session Unsorted/MPT_NRM" in out and not re.search(r"Exception|^\*\*\* ", out, re.M),
+          "unclosed comment: build -n computes the keys (raw digest)", out)
+    undo_edit(*bad)
+    run("after fixing the comment", 2)
 
 
 # copied to work/afp-demo by setup(), with the nonce: Demo is new to the proof cache

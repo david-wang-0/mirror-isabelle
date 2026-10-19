@@ -1,6 +1,6 @@
 theory L2 imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 external_file \<open>l2.txt\<close>
 

@@ -12,38 +12,109 @@ package isabelle
 object Proof_Cache {
   /* theory keys */
 
+  // version of the key scheme: keys of different versions never match
+  val KEY_VERSION = "2"
+
   def theory_key(
     theory: String,
     sources: List[SHA1.Digest],
     imports: List[SHA1.Digest],
-    options: Options
+    options: Options,
+    normalize: Boolean = false
   ): SHA1.Digest = {
     val content_options =
       (for (opt <- options.iterator if opt.for_content) yield opt.name + "=" + opt.value)
         .toList.sorted
     SHA1.digest(
-      (theory, Isabelle_System.getenv("ML_IDENTIFIER"), sources.map(_.toString),
+      (KEY_VERSION, "normalize=" + normalize,
+        theory, Isabelle_System.getenv("ML_IDENTIFIER"), sources.map(_.toString),
         imports.map(_.toString).sorted, content_options).toString)
   }
 
-  // keys of the theories of a session (in import order), added to those of its heap chain
+
+  /* normalized theory sources: without white space, comments and document commands */
+
+  // the document commands of Pure (Pure/pure_syn.ML): their spans only produce document
+  // output; user-declared commands of a document kind may do anything and are kept
+  val document_commands: Set[String] =
+    Set("chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph",
+      "text", "txt", "text_raw")
+
+  // Unicode forms of lexically relevant symbols: the Scala lexer accepts them like the
+  // symbol names, the ML lexer does not (such sources are left to the raw digest)
+  private lazy val decoded_delimiters: List[String] =
+    List(Symbol.open_decoded, Symbol.close_decoded, Symbol.comment_decoded,
+      Symbol.cancel_decoded, Symbol.latex_decoded, Symbol.marker_decoded)
+
+  // digest of the proper tokens outside of document commands, None for bad input
+  def normalized_digest(syntax: Outer_Syntax, text: String): Option[SHA1.Digest] =
+    try {
+      if (decoded_delimiters.exists(text.contains)) None
+      else {
+        val keywords = syntax.keywords
+        val tokens = Token.explode(keywords, text)
+        if (tokens.exists(_.is_error)) None
+        else {
+          def is_document(tok: Token): Boolean =
+            tok.is_command && document_commands(tok.source) &&
+              keywords.kinds.get(tok.source).exists(Keyword.document)
+          val (proper, _) =
+            tokens.foldLeft((List.empty[Token], false)) {
+              case ((result, skip), tok) =>
+                if (tok.is_space || tok.is_comment) (result, skip)
+                else if (is_document(tok)) (result, true)
+                else if (skip && !tok.is_command && !tok.is_begin) (result, true)
+                else (tok :: result, false)
+            }
+          Some(SHA1.digest(
+            proper.reverse.map(tok => tok.kind.id.toString + ":" + tok.source).mkString("\u0000")))
+        }
+      }
+    }
+    catch { case exn: Throwable if !Exn.is_interrupt(exn) => None }
+
+  // theory source text as read by the ML process: UTF-8, symbols not decoded
+  def read_theory(resources: Resources, name: Document.Node.Name): String =
+    resources.with_thy_reader(name,
+      reader => Scan.reader_decode_utf8(Scan.reader_is_utf8(reader), reader.source.toString))
+
+  // keys of the theories of a session (in import order), added to those of its heap chain;
+  // normalize: theory files by normalized_digest (fallback: raw digest), loaded files raw
   def theory_keys(
     keys0: Map[String, SHA1.Digest],
     entries: List[Document.Node.Entry],
     theory_options: Map[Document.Node.Name, Options],
     loaded_files: List[(String, List[Path])],
-    check_sources: List[Path] => List[(Path, SHA1.Digest)]
+    check_sources: List[Path] => List[(Path, SHA1.Digest)],
+    normalize: Boolean = false,
+    get_syntax: Document.Node.Name => Outer_Syntax = _ => Outer_Syntax.empty,
+    resources: Resources = Resources.bootstrap
   ): Map[String, SHA1.Digest] = {
     val files = loaded_files.toMap
+    val normalized: Map[String, SHA1.Digest] =
+      if (!normalize) Map.empty
+      else {
+        Par_List.map((name: Document.Node.Name) =>
+          name.theory ->
+            (try { normalized_digest(get_syntax(name), read_theory(resources, name)) }
+             catch { case exn: Throwable if !Exn.is_interrupt(exn) => None }),
+          entries.map(_.name)).collect({ case (a, Some(digest)) => a -> digest }).toMap
+      }
     entries.foldLeft(keys0) {
       case (keys, entry) =>
         val name = entry.name
-        val sources =
-          check_sources((name.path :: files.getOrElse(name.theory, Nil)).map(_.expand))
+        val theory_source =
+          normalized.get(name.theory) match {
+            case Some(digest) => List(digest)
+            case None => check_sources(List(name.path.expand)).map(_._2)
+          }
+        val loaded_sources = check_sources(files.getOrElse(name.theory, Nil).map(_.expand))
+        val sources = theory_source ::: loaded_sources.map(_._2)
         val imports = entry.header.imports.map(a => keys.get(a.theory))
         if (imports.forall(_.isDefined)) {
           keys + (name.theory ->
-            theory_key(name.theory, sources.map(_._2), imports.flatten, theory_options(name)))
+            theory_key(name.theory, sources, imports.flatten, theory_options(name),
+              normalize = normalize))
         }
         else keys
     }

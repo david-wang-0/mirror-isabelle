@@ -10,10 +10,30 @@ skipped.
 ## Key
 
 `Proof_Cache.theory_key`, computed in `Sessions.Deps.load` for every theory of every
-session when sources are inlined (i.e. in builds): SHA1 over the theory's long name,
+session when sources are inlined (i.e. in builds): SHA1 over the key scheme
+(`KEY_VERSION`, currently `2`, and `normalize=true|false`), the theory's long name,
 `ML_IDENTIFIER`, the digests of the theory file and of its loaded files (`ML_file` etc.),
 the keys of its imports, and all options with tag `content` of the theory's group, as
 `name=value` (among them `skip_proofs`, `quick_and_dirty`, `record_proofs`, `condition`).
+Version 2 (normalised keys) replaced version 1 (raw digests only): the first build after
+the update re-checks and re-certifies every theory once.
+
+**Normalised theory digest** (`Proof_Cache.normalized_digest`; with `proof_cache` and
+`proof_cache_normalize`, both default): the theory file is read as the ML process reads it
+(UTF-8, symbols not decoded) and tokenised by `Token.explode` with the theory's own outer
+syntax (`Dependencies.get_syntax`: Pure, the imports' headers and its own header, as for
+the ML process). Dropped are white space, comments (`(* … *)`, `\<comment> \<open>…\<close>`, `\<^cancel>`,
+`\<^latex>`, `\<^marker>`), and the spans of the document commands of Pure (`chapter`,
+`section`, …, `subparagraph`, `text`, `txt`, `text_raw`, if declared with a document kind):
+the command and its arguments up to the next command. The digest is SHA1 over the
+remaining tokens as `kind:source`, separated by NUL. So comment, white-space and prose
+edits keep the key; any other token change (statements, proofs, ML code, strings) changes
+it. Fallback to the raw file digest (still under `normalize=true`) when the lexer reports
+an error token (e.g. an unclosed comment or string), when the file contains the Unicode
+form of a cartouche or comment delimiter (`‹`, `›`, `―`, …: the Scala lexer accepts them,
+the ML lexer does not), or on any exception. Loaded files always use the raw digest.
+Theory files are tokenised in parallel; `build -n -v HOL` takes about 1 s longer
+(~5 s instead of ~4 s on a loaded machine).
 
 Imports from the heap chain contribute the key computed for their own session, so the key
 is a pure content hash, recursively over all ancestors down to theory `Pure`, whose loaded
@@ -83,6 +103,11 @@ exchange directory.
 `build -c` only cleans heaps (a rebuild uses the cache); `build -f` or
 `-o proof_cache=false` force full re-checking.
 
+`proof_cache_normalize` (default `true`, tag `build`): normalised theory digests (see
+[Key](#key)); `false` gives raw digests (version-1 behaviour under the version-2 scheme).
+The value is part of every key, so keys of the two schemes never match: switching
+re-checks once. Like `proof_cache`, it does not make an up-to-date session rebuild.
+
 ## Soundness
 
 A hit for T means that an earlier, successful build checked all proofs of T (without the
@@ -97,10 +122,28 @@ statements stay valid, and the oracles of T's theorems still show any skip in I.
 level every skipped proof is a `Pure.cached_proof` oracle theorem (`thm_oracles`,
 `Thm_Deps.all_oracles`), never silent.
 
+Normalised digests identify sources that differ only in material without logical effect.
+White space and comments are discarded by the ML lexer itself (markers only declare
+things on the presentation context). The dropped document commands are Pure's own
+(`Pure/pure_syn.ML`: `Keyword.vacuous` kinds, output via `Document_Output.document_output`
+into the presentation, theory unchanged); a command name cannot be defined twice, so
+these spans cannot do anything else. User commands declared with a document kind
+(`keywords "foo" :: document_heading`) may be implemented by arbitrary ML and are kept.
+Every command, a dropped one included, still runs in a cached load: a broken antiquotation
+fails as before. The keyword tables are those the ML process uses (Pure, the imports'
+headers and the theory's own header). Lexer error tokens, Unicode delimiters (lexed
+differently by Scala and ML) and exceptions fall back to the raw digest. `KEY_VERSION` and
+the option value are part of the key, so keys of different schemes never cross-match.
+Source positions shift under normalised edits: only ML code inspecting its own position
+could observe that, which is deliberate cheating like the other ML side channels below.
+
 ## Limits
 
 - Undeclared inputs (files read by ML without load commands, environment variables,
   external tools) are tracked as weakly as by stock heap up-to-date checks.
+- Normalisation is outer-syntax only: comments inside ML cartouches (`ML ‹(* c *) …›`),
+  inside terms (`‹… \<comment> ‹c››`) and in loaded files still count, as does the
+  text of user-declared document commands.
 - Clean rebuilds use the cache too: `build -c S` re-checks nothing that was checked before
   (use `-f` or `-o proof_cache=false` to re-check).
 - The toplevel skips whole proofs only with `document=false`; with document output only

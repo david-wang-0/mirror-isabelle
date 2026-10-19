@@ -1,6 +1,6 @@
 theory L1 imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 ML_file \<open>l1.ML\<close>
 

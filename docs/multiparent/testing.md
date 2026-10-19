@@ -9,7 +9,8 @@ mp-tests/run.sh [-l] [--slow] [--isabelle TOOL] [CASE ...]
 `mp-tests/run.sh` (Python 3, standard library only) copies `mp-tests/src` (ROOT and
 theories of the `MPT_*` sessions) to `mp-tests/work` (git-ignored), and
 `mp-tests/afp-demo` to `mp-tests/work/afp-demo`, with a fresh nonce in the theories that
-must be new to the proof cache, then runs the cases (all default cases, or those named;
+must be new to the proof cache (a token `ML ‹val nonce = "…"›`: normalised keys ignore
+comments), then runs the cases (all default cases, or those named;
 `--slow` adds the slow ones; `-l` lists them) with
 `isabelle build -d mp-tests/work -v -o threads=8` on the normal user heaps of that Isabelle.
 
@@ -71,6 +72,13 @@ backup).
   variable unset (group skipped in parent and merge) and set (checked, never certified);
   merge over a parent with `sessions` and `document_theories`; `B + C` and `C + B` give
   the same theorems, `cached_proof` on the re-loaded side)
+- `normalize` (session `MPT_NRM`: `NA` imports `NK`, which declares the user command
+  `mysection :: document_heading`; hits after comment, indentation, blank-line and `text`
+  edits and inserted `section`/`text`; `-o proof_cache_normalize=false` misses for both
+  theories (other key scheme), switching back hits; misses after editing a statement, a
+  method, the nonce string, a comment inside `ML ‹…›`, a comment inside a term, the body
+  of `mysection`, and the keyword declaration in `NK`; an unclosed comment fails the build
+  normally, keys fall back to the raw digest)
 - Slow (`--slow`): `fresh` (`build -f` rebuilds Pure, HOL and the session with no lookups,
   still certifies; `-c` afterwards trusts again; about 3.5 minutes; it outdates every heap
   above HOL); `afp_demo` (below, about 3.5 minutes).

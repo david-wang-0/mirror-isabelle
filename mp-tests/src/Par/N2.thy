@@ -1,6 +1,7 @@
 theory N2 imports MPT_C.Y begin
 
-(* nonce: @NONCE@ -- child of the trusted MPT_C.Y, itself not trusted *)
+ML \<open>val nonce = "@NONCE@"\<close>
+(* nonce -- child of the trusted MPT_C.Y, itself not trusted *)
 
 lemma n2_own: "(m::nat) + 0 = m" by simp
 

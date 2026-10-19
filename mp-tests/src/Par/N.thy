@@ -1,6 +1,7 @@
 theory N imports Main begin
 
-(* nonce: @NONCE@ -- new to the proof cache, loaded in parallel with the trusted MPT_C.Y *)
+ML \<open>val nonce = "@NONCE@"\<close>
+(* nonce -- new to the proof cache, loaded in parallel with the trusted MPT_C.Y *)
 
 definition fn0 :: "nat \<Rightarrow> nat" where "fn0 n = 3 * n + 2"
 

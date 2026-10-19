@@ -1,6 +1,6 @@
 theory Y imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 definition fy :: "nat \<Rightarrow> nat" where "fy n = 2 * n + 1"
 

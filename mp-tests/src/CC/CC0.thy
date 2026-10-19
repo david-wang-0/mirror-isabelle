@@ -1,6 +1,6 @@
 theory CC0 imports Main begin
 
-(* nonce: @NONCE@ *)
+ML \<open>val nonce = "@NONCE@"\<close>
 
 definition fcc :: "nat \<Rightarrow> nat" where "fcc n = n + 5"
 

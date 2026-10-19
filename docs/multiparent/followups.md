@@ -20,5 +20,11 @@
   2026) and weeks of `src/Pure` work (session-unique theory ids, data kinds and serials;
   export and replay of registries such as `Context.kinds` and `Thy_Info`); see
   [heap-merge-spike.md](heap-merge-spike.md).
+- **Inner-syntax comments.** Normalised keys ignore only outer-syntax comments, white
+  space and Pure's document commands; comments inside ML cartouches and terms, and the
+  text of user-declared document commands, still change the key (see
+  [proof-cache.md](proof-cache.md#limits)). Normalising inside them needs the ML and
+  inner-syntax lexers (from Scala, or keys computed by the ML process) and, for user
+  document commands, knowledge that their implementation is presentation-only.
 - Smaller points: the proof-cache database is never cleaned up; distributed builds
   (exchange directory local to the build host) and the GUI `-R D` path are untested.
