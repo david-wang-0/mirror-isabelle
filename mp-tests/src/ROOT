@@ -84,3 +84,6 @@ session MPT_CB in CB = HOL +
 
 session MPT_NRM in Nrm = HOL +
   theories NK NA
+
+session MPT_NLIB in NLib = HOL +
+  theories Infinite_Set  (* copied from HOL-Library by run.py, with the nonce *)

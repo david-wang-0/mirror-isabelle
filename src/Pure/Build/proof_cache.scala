@@ -46,7 +46,8 @@ object Proof_Cache {
     List(Symbol.open_decoded, Symbol.close_decoded, Symbol.comment_decoded,
       Symbol.cancel_decoded, Symbol.latex_decoded, Symbol.marker_decoded)
 
-  // digest of the proper tokens outside of document commands, None for bad input
+  // digest of the proper tokens without the keyword and the text argument of Pure's
+  // document commands, None for bad input
   def normalized_digest(syntax: Outer_Syntax, text: String): Option[SHA1.Digest] =
     try {
       if (decoded_delimiters.exists(text.contains)) None
@@ -58,16 +59,35 @@ object Proof_Cache {
           def is_document(tok: Token): Boolean =
             tok.is_command && document_commands(tok.source) &&
               keywords.kinds.get(tok.source).exists(Keyword.document)
+          def is_source(tok: Token): Boolean =
+            tok.kind == Token.Kind.CARTOUCHE || tok.is_string
+          def ends_span(tok: Token): Boolean =
+            tok.is_command || keywords.is_before_command(tok)
+
+          // Pure_Syn: cmd [% tag] [(in target)] source [;], so only the command keyword and
+          // its first cartouche or string outside of parentheses and tags are dropped; every
+          // other token is kept (targets, tags, ";", anything unexpected or unknown to the
+          // Scala keyword table, a command modifier like "private" of the next command)
+          val NORMAL = 0; val SOURCE = 1; val TARGET = 2; val TAG = 3
           val (proper, _) =
-            tokens.foldLeft((List.empty[Token], false)) {
-              case ((result, skip), tok) =>
-                if (tok.is_space || tok.is_comment) (result, skip)
-                else if (is_document(tok)) (result, true)
-                else if (skip && !tok.is_command && !tok.is_begin) (result, true)
-                else (tok :: result, false)
+            tokens.foldLeft((List.empty[Token], NORMAL)) {
+              case ((result, state), tok) =>
+                if (!tok.is_proper) (result, state)
+                else if (is_document(tok)) (result, SOURCE)
+                else if (state == NORMAL || ends_span(tok)) (tok :: result, NORMAL)
+                else if (state == SOURCE && is_source(tok)) (result, NORMAL)
+                else {
+                  val state1 =
+                    if (state == SOURCE && tok.is_keyword("(")) TARGET
+                    else if (state == SOURCE && tok.is_keyword("%")) TAG
+                    else if (state == TARGET && !tok.is_keyword(")")) TARGET
+                    else SOURCE
+                  (tok :: result, state1)
+                }
             }
           Some(SHA1.digest(
-            proper.reverse.map(tok => tok.kind.id.toString + ":" + tok.source).mkString("\u0000")))
+            proper.reverse.map(tok =>
+              tok.kind.id.toString + ":" + tok.source.length + ":" + tok.source).mkString))
         }
       }
     }

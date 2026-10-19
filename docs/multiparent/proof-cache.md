@@ -23,17 +23,23 @@ the update re-checks and re-certifies every theory once.
 (UTF-8, symbols not decoded) and tokenised by `Token.explode` with the theory's own outer
 syntax (`Dependencies.get_syntax`: Pure, the imports' headers and its own header, as for
 the ML process). Dropped are white space, comments (`(* … *)`, `\<comment> \<open>…\<close>`, `\<^cancel>`,
-`\<^latex>`, `\<^marker>`), and the spans of the document commands of Pure (`chapter`,
-`section`, …, `subparagraph`, `text`, `txt`, `text_raw`, if declared with a document kind):
-the command and its arguments up to the next command. The digest is SHA1 over the
-remaining tokens as `kind:source`, separated by NUL. So comment, white-space and prose
+`\<^latex>`, `\<^marker>`), and of the document commands of Pure (`chapter`, `section`,
+`subsection`, `subsubsection`, `paragraph`, `subparagraph`, `text`, `txt`, `text_raw`;
+matched by name *and* a document keyword kind in the theory's syntax) the command keyword
+and its text argument: the first cartouche or string after it, outside of a target
+`(in …)` and a tag `% …`. Everything else is kept, including a target, tags, a `;` and
+any unexpected token before the next command (also a command modifier such as `private`
+of the next command, and a command that only ML knows). The digest is SHA1 over the
+remaining tokens as `kind:length:source`. So comment, white-space and prose
 edits keep the key; any other token change (statements, proofs, ML code, strings) changes
 it. Fallback to the raw file digest (still under `normalize=true`) when the lexer reports
 an error token (e.g. an unclosed comment or string), when the file contains the Unicode
 form of a cartouche or comment delimiter (`‹`, `›`, `―`, …: the Scala lexer accepts them,
 the ML lexer does not), or on any exception. Loaded files always use the raw digest.
 Theory files are tokenised in parallel; `build -n -v HOL` takes about 1 s longer
-(~5 s instead of ~4 s on a loaded machine).
+(~5 s instead of ~4 s on a loaded machine), `build -n -v HOL-Library` 1–2 s (6.9–7.4 s
+instead of 5.5–6.0 s at load 10); one digest takes ~10 ms for `Infinite_Set` (27 kB),
+~130 ms for `HOL/List.thy` (340 kB).
 
 Imports from the heap chain contribute the key computed for their own session, so the key
 is a pure content hash, recursively over all ancestors down to theory `Pure`, whose loaded
@@ -129,10 +135,17 @@ things on the presentation context). The dropped document commands are Pure's ow
 into the presentation, theory unchanged); a command name cannot be defined twice, so
 these spans cannot do anything else. User commands declared with a document kind
 (`keywords "foo" :: document_heading`) may be implemented by arbitrary ML and are kept.
+Only the keyword and the text argument of a document command are dropped, so each remaining
+token keeps its place in the digest: the parser of these commands (`Pure_Syn`:
+`cmd [(in target)] source [;]`) leaves no room for anything else, and any extra token,
+for the next command or for nothing, still counts.
 Every command, a dropped one included, still runs in a cached load: a broken antiquotation
 fails as before. The keyword tables are those the ML process uses (Pure, the imports'
 headers and the theory's own header). Lexer error tokens, Unicode delimiters (lexed
-differently by Scala and ML) and exceptions fall back to the raw digest. `KEY_VERSION` and
+differently by Scala and ML) and exceptions fall back to the raw digest. The Unicode test is
+on the whole file, before lexing, so a file mixing `\<open>` and `‹` is raw as well: a
+`\<open>` ↔ `‹` respelling changes the key (raw digest instead of normalised), and in a
+file with Unicode delimiters comment edits change it too. `KEY_VERSION` and
 the option value are part of the key, so keys of different schemes never cross-match.
 Source positions shift under normalised edits: only ML code inspecting its own position
 could observe that, which is deliberate cheating like the other ML side channels below.

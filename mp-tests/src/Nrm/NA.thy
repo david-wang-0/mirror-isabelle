@@ -19,4 +19,12 @@ lemma na_ge: \<open>na \<ge> 1 \<comment> \<open>term comment\<close>\<close>
 
 mysection \<open>Heading body\<close>
 
+context
+begin
+
+text \<open>Followed by a command modifier.\<close>
+lemma na_ctx: "na \<noteq> 0" by (simp add: na_def)
+
+end
+
 end

@@ -609,7 +609,15 @@ def case_normalize():
         ("blank lines", "definition na ::", "\n\n\ndefinition na ::"),
         ("text body edit", "Body text: edited", "Body text, changed: edited"),
         ("inserted section", "lemma na_pos:", "section \\<open>Inserted\\<close>\n\nlemma na_pos:"),
-        ("new text", "\nend\n", "\ntext \\<open>New paragraph.\\<close>\n\nend\n")]
+        ("new text", "\nend\n", "\ntext \\<open>New paragraph.\\<close>\n\nend\n"),
+        ("formal comment between commands", "definition na ::",
+         "\\<comment> \\<open>formal comment\\<close>\n\ndefinition na ::"),
+        ("comments inside a statement", "lemma na_pos: \"na > 0\"",
+         "lemma na_pos: (* inside *) \"na > 0\" (* the statement *)"),
+        ("command keyword inside a comment", "definition na ::",
+         "(* lemma fake: \"False\" sorry *)\ndefinition na ::"),
+        ("section inside a context block", "context\nbegin\n",
+         "context\nbegin\n\nsection \\<open>In context\\<close>\n")]
     for what, old, new in hits:  # cumulative
         edit(na, old, new)
         run("after " + what, 2)
@@ -634,7 +642,9 @@ def case_normalize():
         ("nonce string", "val nonce = \"", "val nonce = \"x"),
         ("comment inside ML", "(* ML comment *)", "(* ML comment, changed *)"),
         ("comment inside a term", "term comment", "term comment, changed"),
-        ("user document command body", "Heading body", "Heading body, changed")]
+        ("user document command body", "Heading body", "Heading body, changed"),
+        ("command modifier after a text", "modifier.\\<close>\nlemma na_ctx",
+         "modifier.\\<close>\nprivate lemma na_ctx")]
     for what, old, new in misses:
         n = rows("NA")
         edit(na, old, new)
@@ -661,6 +671,54 @@ def case_normalize():
           "unclosed comment: build -n computes the keys (raw digest)", out)
     undo_edit(*bad)
     run("after fixing the comment", 2)
+
+    # a document command still runs in a cached load: a broken antiquotation fails the build
+    antiq = (na, "Body text: edited", "Body text @{thm nonexistent}: edited")
+    edit(*antiq)
+    n = rows("NA")
+    rc, out = build("MPT_NRM")
+    check(rc != 0 and trusted(out, "MPT_NRM") == (2, 2) and "nonexistent" in out,
+          "text with a bad antiquotation: key hit (2/2 trusted), but the build fails",
+          "\n".join(out.splitlines()[-15:]))
+    check(rows("NA") == n, "failed build: no new row")
+    undo_edit(*antiq)
+
+    # Unicode delimiters (here inside an ML comment) force the raw digest: a miss, and
+    # comment edits in such a file miss too; back to ASCII symbols: normalised again
+    ascii = (na, "(* ML comment *)", "(* ML \\<open>comment\\<close> *)")
+    uni = (na, "(* ML \\<open>comment\\<close> *)", "(* ML \u2039comment\u203a *)")
+    edit(*ascii)
+    run("with \\<open>comment\\<close> in ML (ML comment edit: miss)", 1)
+    edit(*uni)
+    run("with \u2039comment\u203a in ML (raw fallback: miss)", 1)
+    edit(*comment)
+    run("after an outer comment edit in a file with Unicode delimiters (raw: miss)", 1)
+    undo_edit(*comment)
+    undo_edit(*uni)
+    n = rows("NA")
+    run("back to \\<open>comment\\<close> (normalised: hit)", 2)
+    check(rows("NA") == n, "ASCII spelling again: hit, no new row")
+    undo_edit(*ascii)
+    run("after reverting the ML comment", 2)
+
+
+@case
+def case_normalize_library():
+    # a real library theory (HOL-Library's Infinite_Set, copied with the nonce by setup()):
+    # comment and text edits keep the key
+    rc, out = build("MPT_NLIB")
+    check_ok(rc, out, "MPT_NLIB (copy of HOL-Library.Infinite_Set)")
+    check_trusted(out, "MPT_NLIB", 0, 1)
+    n = len(cache_rows("MPT_NLIB.Infinite_Set"))
+    check(n >= 1, "Infinite_Set certified")
+    thy = "NLib/Infinite_Set.thy"
+    edit(thy, "courtesy of Michael Schmidt", "courtesy of Michael Schmidt, edited")
+    edit(thy, "Properties of quantifiers with singletons.", "Quantifiers with singletons.")
+    edit(thy, "(*  Title:", "(* edited by case_normalize_library\n    Title:")
+    rc, out = build("MPT_NLIB")
+    check_ok(rc, out, "MPT_NLIB after comment and text edits")
+    check_trusted(out, "MPT_NLIB", 1, 1)
+    check(len(cache_rows("MPT_NLIB.Infinite_Set")) == n, "hit, no new row")
 
 
 # copied to work/afp-demo by setup(), with the nonce: Demo is new to the proof cache
@@ -756,11 +814,40 @@ def copy_tree(src, dst, nonce):
             open(os.path.join(target, name), "w").write(text.replace("@NONCE@", nonce))
 
 
+# library theories copied into work/ by setup(), with the nonce after "begin"
+LIBRARY_COPIES = [("HOL/Library/Infinite_Set.thy", "NLib")]
+
+
+def check_nonces():
+    """every test theory carries the nonce or imports a test theory: all keys are new in
+    every run, also after a change of the key scheme (certifications of earlier runs never
+    count)"""
+    names = set()
+    for root, _, files in os.walk(SRC):
+        names.update(f[:-4] for f in files if f.endswith(".thy"))
+    for root, _, files in os.walk(SRC):
+        for f in files:
+            if f.endswith(".thy"):
+                text = open(os.path.join(root, f)).read()
+                m = re.search(r"imports(.*?)\bbegin\b", text, re.S)
+                imports = m.group(1).split() if m else []
+                assert "@NONCE@" in text or any(
+                    i.startswith("MPT_") or i in names for i in imports), \
+                    "test theory without nonce: " + os.path.join(root, f)
+
+
 def setup():
+    check_nonces()
     shutil.rmtree(WORK, ignore_errors=True)
     nonce = uuid.uuid4().hex
     copy_tree(SRC, WORK, nonce)
     copy_tree(os.path.join(HERE, "afp-demo"), AFP_DEMO, nonce)
+    for path, d in LIBRARY_COPIES:
+        text = open(os.path.join(ISABELLE_HOME, "src", path)).read()
+        text = re.sub(r"\bbegin\b", 'begin\n\nML \\<open>val nonce = "%s"\\<close>\n' % nonce,
+                      text, count=1)
+        os.makedirs(os.path.join(WORK, d), exist_ok=True)
+        open(os.path.join(WORK, d, os.path.basename(path)), "w").write(text)
 
 
 def main(args):

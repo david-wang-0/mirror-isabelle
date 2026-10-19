@@ -25,6 +25,10 @@
   text of user-declared document commands, still change the key (see
   [proof-cache.md](proof-cache.md#limits)). Normalising inside them needs the ML and
   inner-syntax lexers (from Scala, or keys computed by the ML process) and, for user
-  document commands, knowledge that their implementation is presentation-only.
+  document commands (`keywords "foo" :: document_heading` with an ML implementation),
+  knowledge that their implementation is presentation-only (e.g. a declaration that the
+  command is defined by `Document_Output.document_output`, checked by the ML process).
+  Files with Unicode delimiters (`‹ › ―`) are digested raw; decoding them first would
+  need the ML lexer's view of such files.
 - Smaller points: the proof-cache database is never cleaned up; distributed builds
   (exchange directory local to the build host) and the GUI `-R D` path are untested.

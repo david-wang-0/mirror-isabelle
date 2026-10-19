@@ -77,8 +77,17 @@ backup).
   edits and inserted `section`/`text`; `-o proof_cache_normalize=false` misses for both
   theories (other key scheme), switching back hits; misses after editing a statement, a
   method, the nonce string, a comment inside `ML ‹…›`, a comment inside a term, the body
-  of `mysection`, and the keyword declaration in `NK`; an unclosed comment fails the build
-  normally, keys fall back to the raw digest)
+  of `mysection`, the keyword declaration in `NK`, and a `private` modifier on the command
+  after a `text`; an unclosed comment fails the build normally, keys fall back to the raw
+  digest; also hits after a formal comment `\<comment> ‹…›` between commands, comments
+  inside a statement, a comment containing a command keyword, and a `section` inside a
+  `context … begin … end` block; a bad antiquotation `@{thm nonexistent}` added to a
+  `text` keeps the key (2/2 trusted) but fails the build (document commands still run);
+  Unicode `‹…›` inside an ML comment forces the raw digest (miss, and outer comment edits
+  miss in that file too), back to `\<open>…\<close>` hits again)
+- `normalize_library` (session `MPT_NLIB`: a copy of `HOL-Library.Infinite_Set`, with the
+  nonce, made by the runner; edits of a formal comment, a `text` and the header comment
+  hit)
 - Slow (`--slow`): `fresh` (`build -f` rebuilds Pure, HOL and the session with no lookups,
   still certifies; `-c` afterwards trusts again; about 3.5 minutes; it outdates every heap
   above HOL); `afp_demo` (below, about 3.5 minutes).
@@ -92,7 +101,11 @@ extra environment variables), `check`, `check_ok`, `check_trusted`, `check_oracl
 `check_fast`/`check_slow`, `cache_rows`, `edit`/`undo_edit`; new sessions go into
 `mp-tests/src/ROOT`. Cases run in definition order and may rely on sessions built by
 earlier cases; cache rows accumulate over runs (one per nonce), so count them relative to
-the start of the case. Session heaps built by `-b` stay real checks only until a rebuild,
+the start of the case. Every test theory carries the nonce or imports a test theory
+(checked by the runner before it starts), so that all keys are new in every run, also
+after a change of the key scheme: a theory without one (e.g. importing only `Main`) keeps
+its key over runs, and a heap of its session built under an older key scheme is not
+rebuilt, so the theory is never certified under the current scheme and merges over it miss. Session heaps built by `-b` stay real checks only until a rebuild,
 which may trust the cache (a parent heap rebuilt from the cache carries `cached_proof`);
 note that without `build_thorough` a change of options alone does not rebuild a session
 (use `-c`).
