@@ -36,3 +36,48 @@ session MPT_FC in FC = MPT_B + MPT_BAD +
 
 session MPT_W in Wr = HOL +
   theories G0
+
+(* tester cases (T1-T7), see run.py *)
+
+session MPT_PAR in Par = HOL +
+  sessions MPT_C
+  theories N N2 PChk
+
+session MPT_L in L = HOL +
+  theories L1 L2
+
+session MPT_IP in IP = HOL +
+  theories IA
+
+session MPT_IC in IC = MPT_IP +
+  theories IB0 IB1
+
+session MPT_Q in Q = HOL +
+  theories Q1 Q2 QChk
+
+session MPT_CC in CC = HOL +
+  theories CC0
+  theories [condition = MPT_COND] CC1
+
+session MPT_MC in MC = MPT_B + MPT_CC +
+  theories MC0
+
+session MPT_CD in CD = HOL +
+  sessions MPT_E
+  theories CD0
+  document_theories MPT_E.W
+
+session MPT_MD in MD = MPT_B + MPT_CD +
+  theories MD0
+
+session MPT_O1 in O1 = MPT_B + MPT_C +
+  theories O1
+
+session MPT_O2 in O2 = MPT_C + MPT_B +
+  theories O2
+
+session MPT_CA in CA = HOL +
+  theories CA
+
+session MPT_CB in CB = HOL +
+  theories CB

@@ -14,6 +14,16 @@ import scala.collection.mutable
 object Sessions_Multiparent {
   import Sessions.{Info, Session_Entry, Chapter_Defs}
 
+  // Build_Process: store the heap of a session that is a heap-chain ancestor of a session in
+  // the build (Build_Process.Sessions.store_heap also counts build_prereqs: C of "B+C"
+  // would be rebuilt just to store a heap that is never loaded)
+  def store_heap(structure: Sessions.Structure, sessions: List[String], name: String): Boolean =
+    Sessions.is_pure(name) || {
+      val graph = structure.heap_graph
+      val parents = sessions.filter(graph.defined).flatMap(graph.imm_preds)
+      graph.all_preds(parents).contains(name)
+    }
+
   // session infos with other_parents resolved, plus the synthesized merge sessions
   def make_infos(
     raw_infos: List[Info],

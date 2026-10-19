@@ -1,0 +1,1 @@
+external data of L2: editing only this file must change L2's key

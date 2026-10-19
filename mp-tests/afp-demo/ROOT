@@ -1,0 +1,10 @@
+(* AFP demonstration (mp-tests/run.py --slow, case afp_demo; see MP-README.md):
+   Word_Lib and Automatic_Refinement, both HOL + sessions HOL-Library etc., combined as in
+   developments that refine algorithms down to machine words (e.g. Isabelle_LLVM). *)
+
+session AFP_Demo_Merge in Merge = Word_Lib + Automatic_Refinement +
+  theories Demo
+
+session AFP_Demo_Base in Base = Word_Lib +
+  sessions Automatic_Refinement
+  theories Demo

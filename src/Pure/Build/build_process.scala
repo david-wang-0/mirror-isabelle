@@ -1162,7 +1162,9 @@ extends AutoCloseable {
   ): Build_Process.State = {
     val sources_shasum = state.sessions(session_name).sources_shasum
     val input_shasum = store.make_shasum(ancestor_results.map(_.output_shasum))
-    val store_heap = build_context.store_heap || state.sessions.store_heap(session_name)
+    val store_heap = build_context.store_heap ||  // MP: heap chain only, not build_prereqs
+      Sessions_Multiparent.store_heap(build_context.sessions_structure,
+        state.sessions.iterator.map(_.name).toList, session_name)
     val (current, output_shasum) =
       store.check_output(_database_server, session_name,
         sources_shasum = sources_shasum,

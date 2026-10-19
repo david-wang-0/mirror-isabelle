@@ -95,10 +95,25 @@ object Proof_Cache {
     }
   }
 
+  // concurrent build processes: SQLite reports a busy database at once when two deferred
+  // transactions both want to write (lock upgrade), so retry after a random delay
+  private def retry[A](body: => A): A = {
+    def attempt(n: Int): A =
+      try { body }
+      catch {
+        case exn: java.sql.SQLException
+        if n > 1 && Option(exn.getMessage).exists(msg =>
+          msg.contains("SQLITE_BUSY") || msg.contains("SQLITE_LOCKED")) =>
+          Time.seconds(0.05 + 0.25 * scala.util.Random.nextDouble()).sleep()
+          attempt(n - 1)
+      }
+    attempt(20)
+  }
+
   // theories (with their keys) that were certified before; one database user per JVM
   def lookup(theories: List[(String, SHA1.Digest)]): List[String] = synchronized {
     if (theories.isEmpty) Nil
-    else {
+    else retry {
       using(SQLite.open_database(private_data.database)) { db =>
         val known =
           private_data.transaction_lock(db, create = true, label = "Proof_Cache.lookup") {
@@ -110,7 +125,7 @@ object Proof_Cache {
   }
 
   def write(session_name: String, theories: List[(String, SHA1.Digest)]): Unit = synchronized {
-    if (theories.nonEmpty) {
+    if (theories.nonEmpty) retry {
       using(SQLite.open_database(private_data.database)) { db =>
         private_data.transaction_lock(db, create = true, label = "Proof_Cache.write") {
           private_data.write_keys(db, session_name,

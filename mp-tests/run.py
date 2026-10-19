@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Test suite for multi-parent sessions and the proof cache (see MP-README.md).
 
-Usage: mp-tests/run.sh [-l] [CASE ...]
+Usage: mp-tests/run.sh [-l] [--slow] [CASE ...]
 
 Copies src/ to work/ (git-ignored), substituting a fresh @NONCE@ so that the
 theories carrying it are new to the proof cache, then runs the cases in CASES
 order (all, or the given ones) with bin/isabelle-mp on the normal user heaps.
+Cases registered with @slow_case run only with --slow or when named.
 Each assertion prints a PASS or FAIL line; the exit code is 1 if any failed.
 
 Add a case: write a function `case_<name>()` using `build`, `check`, `cache_rows`,
@@ -40,9 +41,9 @@ CACHED = "Pure.cached_proof"
 
 # utilities
 
-def isabelle(*args):
+def isabelle(*args, env=None):
     proc = subprocess.run([ISABELLE, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True)
+                          text=True, env=None if env is None else {**os.environ, **env})
     return proc.returncode, proc.stdout
 
 
@@ -53,11 +54,19 @@ def getenv(name):
 TIMING = {}  # session -> maximal elapsed seconds of its builds (a real check, not a cached one)
 
 
-def build(*args):
-    """isabelle build -d work -v ARGS: (rc, output); records Timing lines"""
-    rc, out = isabelle("build", "-d", WORK, "-v", *BUILD_OPTIONS, *args)
+def build_args(*args):
+    return ["build", "-d", WORK, "-v", *BUILD_OPTIONS, *args]
+
+
+def record_timing(out):
     for m in re.finditer(r"^Timing (\S+) \(\d+ threads, ([\d.]+)s elapsed", out, re.M):
         TIMING[m.group(1)] = max(TIMING.get(m.group(1), 0.0), float(m.group(2)))
+
+
+def build(*args, env=None):
+    """isabelle build -d work -v ARGS: (rc, output); records Timing lines"""
+    rc, out = isabelle(*build_args(*args), env=env)
+    record_timing(out)
     return rc, out
 
 
@@ -108,6 +117,10 @@ def oracles(session_dir):
                 result[m.group(1)] = [s.strip() for s in m.group(2).split(",") if s.strip()]
         os.remove(path)  # no stale results for the next build
     return result
+
+
+def undo_edit(path, old, new):
+    edit(path, new, old)
 
 
 def edit(path, old, new):
@@ -169,6 +182,7 @@ def check_slow(session, reference):
 # cases
 
 CASES = []
+SLOW = set()  # cases run only with --slow (or when named)
 
 
 def case(f):
@@ -176,11 +190,20 @@ def case(f):
     return f
 
 
+def slow_case(f):
+    SLOW.add(f.__name__)
+    return case(f)
+
+
 @case
 def case_hol_uptodate():
     rc, out = isabelle("build", "-n", "-v", "HOL")
     check(rc == 0 and not re.search(r"^(Building|Running) ", out, re.M),
           "build -n -v HOL has nothing to rebuild", out)
+    rc, out = isabelle("build", "-o", "proof_cache=false", "-n", "-v", "HOL")
+    check(rc == 0 and not re.search(r"^(Building|Running) ", out, re.M),
+          "build -o proof_cache=false -n -v HOL has nothing to rebuild (not a content option)",
+          out)
 
 
 @case
@@ -272,6 +295,8 @@ def case_edit_miss():
     check_trusted(out, "MPT_S", 1, 2)
     rc, out = build("MPT_D")
     check_ok(rc, out, "MPT_D after editing Y")
+    check(not started(out, "MPT_C"),
+          "MPT_C (built without heap) is not rebuilt for its heap: the merge does not load it")
     check_trusted(out, "MPT_B+MPT_C", 1, 1)
 
 
@@ -311,6 +336,317 @@ def case_proof_cache_false_merge():
     check_ok(rc, out, "MPT_D afterwards")
 
 
+# tester cases (T1-T7)
+
+def check_oracle_lists(table, expect):
+    """exact oracle lists (sorted) per fact"""
+    for name, want in expect.items():
+        got = table.get(name)
+        check(got is not None and sorted(got) == sorted(want),
+              "%s carries %s (got %s)" % (name, want, got))
+
+
+@case
+def case_parallel():
+    rc, out = build("MPT_C")  # MPT_C.Y certified (no-op after plain_sessions)
+    check_ok(rc, out, "MPT_C")
+    rc, out = build("MPT_PAR")
+    check_ok(rc, out, "MPT_PAR (sessions MPT_C: trusted Y next to new N, N2)")
+    check_trusted(out, "MPT_PAR", 1, 4)
+    check_oracle_lists(oracles("Par"), {
+        "N.n1": [], "N.n2": [],  # loaded in parallel with the trusted Y: flag must not leak
+        "N2.n2_own": [],  # child of the trusted Y, itself untrusted
+        "N2.n2_y": [CACHED], "Y.fy_pos": [CACHED]})
+
+
+@case
+def case_loaded_files():
+    def rows(thy):
+        return len(cache_rows("MPT_L." + thy))
+    n1, n2 = rows("L1"), rows("L2")
+    rc, out = build("MPT_L")
+    check_ok(rc, out, "MPT_L")
+    check_trusted(out, "MPT_L", 0, 2)
+    check(rows("L1") == n1 + 1 and rows("L2") == n2 + 1, "L1, L2 certified")
+    for (path, thy, other, old, new) in [
+            ("L/l1.ML", "L1", "L2", "val l1_value_ml = 1;", "val l1_value_ml = 2;"),
+            ("L/l2.txt", "L2", "L1", "external data", "External data")]:
+        n, n_other = rows(thy), rows(other)
+        edit(path, old, new)
+        rc, out = build("MPT_L")
+        check_ok(rc, out, "MPT_L after editing only " + path)
+        check_trusted(out, "MPT_L", 1, 2)
+        check(rows(thy) == n + 1 and rows(other) == n_other,
+              thy + " misses and is re-certified, " + other + " hits")
+        undo_edit(path, old, new)
+        rc, out = build("MPT_L")
+        check_ok(rc, out, "MPT_L after reverting " + path)
+        check_trusted(out, "MPT_L", 2, 2)
+        check(rows(thy) == n + 1, thy + ": the old key hits again (no new row)")
+
+
+@case
+def case_import_change():
+    def rows(thy):
+        return len(cache_rows(thy))
+    n = rows("MPT_IC.IB1")
+    rc, out = build("MPT_IC")
+    check_ok(rc, out, "MPT_IC = MPT_IP + IB0 IB1")
+    check_trusted(out, "MPT_IP", 0, 1)
+    check_trusted(out, "MPT_IC", 0, 2)
+    rc, out = build("-c", "MPT_IC")
+    check_ok(rc, out, "MPT_IC clean rebuild")
+    check_trusted(out, "MPT_IC", 2, 2)
+
+    edit0 = ("IC/IB0.thy", "lemma ib0:", "lemma ib0': \"ia \\<ge> 0\" by simp\n\nlemma ib0:")
+    edit(*edit0)
+    rc, out = build("MPT_IC")
+    check_ok(rc, out, "MPT_IC after editing IB0 (import of IB1)")
+    check_trusted(out, "MPT_IC", 0, 2)
+    check(rows("MPT_IC.IB1") == n + 2, "unchanged IB1 misses through its import, re-certified")
+
+    edita = ("IP/IA.thy", "lemma ia_pos:", "lemma ia_ge: \"ia \\<ge> 0\" by simp\n\nlemma ia_pos:")
+    edit(*edita)
+    rc, out = build("MPT_IC")
+    check_ok(rc, out, "MPT_IC after editing IA in the parent session")
+    check_trusted(out, "MPT_IP", 0, 1)
+    check_trusted(out, "MPT_IC", 0, 2)
+    check(rows("MPT_IC.IB1") == n + 3, "heap-chain import change: IB1 misses, re-certified")
+
+    undo_edit(*edita)
+    rc, out = build("MPT_IC")
+    check_ok(rc, out, "MPT_IC after reverting IA")
+    check_trusted(out, "MPT_IP", 1, 1)
+    check_trusted(out, "MPT_IC", 2, 2)
+    undo_edit(*edit0)
+
+
+@case
+def case_options():
+    def rows():
+        return len(cache_rows("MPT_W.G0"))
+    rc, out = build("MPT_W")
+    check_ok(rc, out, "MPT_W")
+    rc, out = build("-c", "MPT_W")
+    check_ok(rc, out, "MPT_W clean rebuild")
+    check_trusted(out, "MPT_W", 1, 1)
+    rows0 = rows()
+    rc, out = build("-c", "-o", "ML_print_depth=7", "MPT_W")
+    check_ok(rc, out, "MPT_W with content option ML_print_depth=7")
+    check_trusted(out, "MPT_W", 0, 1)
+    check(rows() == rows0 + 1, "changed content option: miss, certified under a new key")
+    rc, out = build("-c", "-o", "ML_print_depth=7", "MPT_W")
+    check_ok(rc, out, "MPT_W with ML_print_depth=7 again")
+    check_trusted(out, "MPT_W", 1, 1)
+    rc, out = build("-c", "-o", "timeout_scale=2", "MPT_W")
+    check_ok(rc, out, "MPT_W with non-content option timeout_scale=2")
+    check_trusted(out, "MPT_W", 1, 1)
+
+
+@case
+def case_skip_oracle():
+    def rows(thy):
+        return len(cache_rows("MPT_Q." + thy))
+    n2, nc = rows("Q2"), rows("QChk")
+    rc, out = build("MPT_Q")
+    check_ok(rc, out, "MPT_Q")
+    check_trusted(out, "MPT_Q", 0, 3)
+    check(rows("Q1") == 0, "sorry under a theory-local quick_and_dirty: Q1 never certified")
+    check(rows("Q2") == n2 + 1, "tool-like Skip_Proof.make_thm in Q2: certified")
+    check(rows("QChk") == nc + 1, "QChk certified")
+    real = oracles("Q")
+    check_oracle_lists(real, {"Q1.q1": ["Pure.skip_proof"], "Q1.q1_real": [],
+                              "Q2.q2_raw": ["Pure.skip_proof"], "Q2.q2": ["Pure.skip_proof"],
+                              "Q2.q2_real": []})
+    rc, out = build("-c", "MPT_Q")
+    check_ok(rc, out, "MPT_Q clean rebuild")
+    check_trusted(out, "MPT_Q", 2, 3)
+    cached = oracles("Q")
+    check_oracle_lists(cached, {"Q1.q1": ["Pure.skip_proof"], "Q1.q1_real": [],
+                                "Q2.q2_raw": ["Pure.skip_proof"], "Q2.q2_real": [CACHED]})
+    # documented limit: the oracle trail stops at a cached proof (skip_proof not shown)
+    check_oracle_lists(cached, {"Q2.q2": [CACHED]})
+
+
+@case
+def case_robustness():
+    db = cache_db()
+    backup = db + ".mp-tests-backup"
+    shutil.copy2(db, backup)
+    try:
+        os.remove(db)
+        rc, out = build("-c", "MPT_W")
+        check_ok(rc, out, "MPT_W without proof_cache.db")
+        check_trusted(out, "MPT_W", 0, 1)
+        check(len(cache_rows("MPT_W.G0")) == 1, "database re-created, G0 certified")
+
+        os.remove(db)
+        os.mkdir(db)  # unusable database
+        rc, out = build("-c", "MPT_W")
+        check_ok(rc, out, "MPT_W with an unusable proof_cache.db")
+        check(re.search(r"Proof cache MPT_W: ", out) is not None and
+              re.search(r"^### Proof cache MPT_W", out, re.M) is not None,
+              "lookup/write failures are warnings", out)
+        os.rmdir(db)
+
+        shutil.copy2(backup, db)
+        os.chmod(db, 0o444)
+        rc, out = build("-c", "MPT_W")
+        check_ok(rc, out, "MPT_W with a read-only proof_cache.db (lookup)")
+        check_trusted(out, "MPT_W", 1, 1)
+        rc, out = build("-c", "-o", "ML_print_depth=11", "MPT_W")
+        check_ok(rc, out, "MPT_W with a read-only proof_cache.db (write)")
+        check(re.search(r"^### Proof cache MPT_W", out, re.M) is not None,
+              "write to read-only database: warning", out)
+    finally:
+        if os.path.isdir(db):
+            os.rmdir(db)
+        elif os.path.exists(db):
+            os.chmod(db, 0o644)
+        shutil.move(backup, db)
+
+    # concurrent writers (SQLite lock upgrade conflicts are retried): three rounds
+    for rnd in range(3):
+        for d in ["CA", "CB"]:
+            path = os.path.join(WORK, d, d + ".thy")
+            text = re.sub(r"nonce: \S+", "nonce: " + uuid.uuid4().hex, open(path).read())
+            open(path, "w").write(text)
+        n = {s: len(cache_rows(s + "." + s[len("MPT_"):])) for s in ["MPT_CA", "MPT_CB"]}
+        procs = [subprocess.Popen([ISABELLE, *build_args(s)], stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+                 for s in ["MPT_CA", "MPT_CB"]]
+        for s, p in zip(["MPT_CA", "MPT_CB"], procs):
+            out = p.communicate()[0]
+            record_timing(out)
+            check_ok(p.returncode, out, "%s (built concurrently, round %d)" % (s, rnd))
+            check(len(cache_rows(s + "." + s[len("MPT_"):])) == n[s] + 1,
+                  "%s certified (round %d)" % (s, rnd), out)
+
+
+@slow_case
+def case_fresh():
+    rows0 = cache_rows("MPT_W.G0")
+    rc, out = build("-f", "MPT_W")
+    check_ok(rc, out, "MPT_W with -f (fresh build: Pure, HOL, MPT_W)")
+    check(started(out, "HOL") is not None, "-f rebuilds the whole chain (stock)")
+    for s in ["HOL", "MPT_W"]:
+        res = trusted(out, s)
+        check(res is not None and res[0] == 0, "-f: %s trusts nothing (got %s)" % (s, res))
+    rows1 = cache_rows("MPT_W.G0")
+    check(set(rows1) - set(rows0) != set(),
+          "-f: still certifies (new row, or the existing row re-written with a new date)")
+    rc, out = build("-c", "MPT_W")
+    check_ok(rc, out, "MPT_W with -c")
+    check_trusted(out, "MPT_W", 1, 1)
+
+
+@case
+def case_multiparent_corners():
+    rc, out = build("MPT_MC")
+    check_ok(rc, out, "MPT_MC = MPT_B + MPT_CC, condition group skipped (MPT_COND unset)")
+    print("  " + "\n  ".join(l for l in out.splitlines()
+                             if re.search(r"MPT_CC|MPT_B\+MPT_CC|[Ss]kipping", l)))
+    rc, out = build("-c", "MPT_CC", env={"MPT_COND": "1"})
+    check_ok(rc, out, "MPT_CC, MPT_MC with condition group (MPT_COND=1)")
+    rc, out = build("MPT_MC", env={"MPT_COND": "1"})
+    check_ok(rc, out, "MPT_MC with condition group (MPT_COND=1)")
+    print("  " + "\n  ".join(l for l in out.splitlines() if "Proof cache" in l))
+    check(len(cache_rows("MPT_CC.CC1")) == 0, "condition group: never certified")
+
+    rc, out = build("MPT_MD")
+    check_ok(rc, out, "MPT_MD = MPT_B + MPT_CD (CD with sessions + document_theories)")
+
+    rc, out = build("MPT_O1", "MPT_O2")
+    check_ok(rc, out, "MPT_O1 = MPT_B + MPT_C and MPT_O2 = MPT_C + MPT_B")
+    check_trusted(out, "MPT_C+MPT_B", 1, 1)
+    # the re-loaded side carries cached_proof; the heap side (MPT_B resp. MPT_C) depends on
+    # how that heap was built (a rebuild from the cache is legitimate), so it is not checked
+    check_oracles(oracles("O1"), {"fy_pos": True, "O1_both": True})
+    check_oracles(oracles("O2"), {"fx_pos": True, "O2_both": True})
+    thms = [open(os.path.join(WORK, d, "thms.out")).read() for d in ["O1", "O2"]]
+    check(thms[0] == thms[1] and thms[0].strip() != "",
+          "parent order: same theorems", "\n".join(thms))
+
+
+AFP_DEMO = os.path.join(HERE, "afp-demo")
+AFP_A, AFP_B = "Word_Lib", "Automatic_Refinement"
+AFP_MERGE = AFP_A + "+" + AFP_B
+
+
+def timings(out):
+    """session -> (elapsed, cpu) of its Timing line (theory processing)"""
+    return {m.group(1): (float(m.group(2)), float(m.group(3)))
+            for m in re.finditer(
+                r"^Timing (\S+) \(\d+ threads, ([\d.]+)s elapsed time, ([\d.]+)s cpu", out, re.M)}
+
+
+@slow_case
+def case_afp_demo():
+    """AFP_Demo_Merge = Word_Lib + Automatic_Refinement vs. baseline with sessions"""
+    def afp_build(*args):
+        cmd = ["build", "-d", AFP_DEMO, "-v", *BUILD_OPTIONS, *args]
+        print("  $ bin/isabelle-mp " + " ".join(cmd).replace(AFP_DEMO, "mp-tests/afp-demo"))
+        sys.stdout.flush()
+        rc, out = isabelle(*cmd)
+        return rc, out
+
+    table = []
+
+    def row(label, out, session):
+        t = timings(out).get(session)
+        tr = trusted(out, session)
+        m = re.search(r"^Finished " + re.escape(session) + r" \((\d+):(\d+):(\d+) elapsed", out, re.M)
+        total = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) if m else None
+        table.append((label, session, t, total, tr))
+
+    # A stock (no cache: its facts carry no oracle), B with the cache (certifies B's theories)
+    rc, out = afp_build("-c", "-b", "-o", "proof_cache=false", AFP_A, AFP_B)
+    check_ok(rc, out, "parents %s, %s (clean build, proof_cache=false)" % (AFP_A, AFP_B))
+    row("parent A, proof_cache=false", out, AFP_A)
+    row("parent B, proof_cache=false", out, AFP_B)
+    rc, out = afp_build("-c", AFP_B)
+    check_ok(rc, out, "parent %s with the cache" % AFP_B)
+    row("parent B, cache", out, AFP_B)
+
+    rc, out = afp_build("AFP_Demo_Merge")
+    check_ok(rc, out, "AFP_Demo_Merge")
+    row("merge, cache", out, AFP_MERGE)
+    row("child, cache", out, "AFP_Demo_Merge")
+    res = trusted(out, AFP_MERGE)
+    check(res is not None and res[0] == res[1] and res[1] > 0,
+          "merge %s trusts all re-loaded theories (got %s)" % (AFP_MERGE, res))
+    ora = oracles(os.path.join(AFP_DEMO, "Merge"))
+    check_oracle_lists(ora, {"demo": [CACHED], "demo_rel": [CACHED],
+                             "list_rel_id_simp": [CACHED], "fun_relI": [CACHED],
+                             "demo_word": [], "word_le_minus_one_leq": []})
+
+    rc, out = afp_build("-c", "-o", "proof_cache=false", AFP_MERGE, "AFP_Demo_Merge")
+    check_ok(rc, out, "AFP_Demo_Merge with proof_cache=false")
+    row("merge, proof_cache=false", out, AFP_MERGE)
+    row("child, proof_cache=false", out, "AFP_Demo_Merge")
+    ora = oracles(os.path.join(AFP_DEMO, "Merge"))
+    check_oracle_lists(ora, {"demo": [], "demo_rel": [], "list_rel_id_simp": [],
+                             "demo_word": []})
+
+    rc, out = afp_build("-c", "AFP_Demo_Base")
+    check_ok(rc, out, "AFP_Demo_Base (sessions Automatic_Refinement), cache")
+    row("baseline, cache", out, "AFP_Demo_Base")
+    rc, out = afp_build("-c", "-o", "proof_cache=false", "AFP_Demo_Base")
+    check_ok(rc, out, "AFP_Demo_Base, proof_cache=false")
+    row("baseline, proof_cache=false", out, "AFP_Demo_Base")
+
+    rc, out = afp_build("-c", AFP_MERGE, "AFP_Demo_Merge")  # leave cached heaps behind
+    check_ok(rc, out, "AFP_Demo_Merge rebuilt with cache")
+
+    print("\n| build | session | theories elapsed / cpu | session total | trusted |\n"
+          "|---|---|---|---|---|")
+    for label, session, t, total, tr in table:
+        print("| %s | `%s` | %s | %s | %s |" % (
+            label, session, "%.1f s / %.1f s" % t if t else "-",
+            "%d s" % total if total is not None else "-", "%d/%d" % tr if tr else "-"))
+    print()
+
+
 # main
 
 def setup():
@@ -327,8 +663,10 @@ def setup():
 def main(args):
     names = {f.__name__[len("case_"):]: f for f in CASES}
     if args[:1] == ["-l"]:
-        print("\n".join(names))
+        print("\n".join(n + (" (--slow)" if f.__name__ in SLOW else "") for n, f in names.items()))
         return 0
+    slow = "--slow" in args
+    args = [a for a in args if a != "--slow"]
     unknown = [a for a in args if a not in names]
     if unknown:
         print("Unknown case(s): " + ", ".join(unknown) + "\nCases: " + ", ".join(names))
@@ -337,6 +675,8 @@ def main(args):
     for f in CASES:
         name = f.__name__[len("case_"):]
         if args and name not in args:
+            continue
+        if not args and f.__name__ in SLOW and not slow:
             continue
         CURRENT[0] = name
         print("=== " + name)
