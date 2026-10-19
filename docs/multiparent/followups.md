@@ -15,8 +15,10 @@
 - **Port to Isabelle2026** once it is released (currently at release candidate RC4; the
   final release is expected around 2026-10-24). The changes are confined to new files plus
   small hooks marked `MP:` in `src/Pure`, which should make the port mechanical.
-- **Heap-merge spike (pending).** Instead of re-loading the right parent's theories, merge
-  the Poly/ML heaps (or the theory data they hold) directly; a spike to judge feasibility
-  has not been done yet.
+- **Heap-merge (spike done, deferred).** Loading a sibling's theories as a Poly/ML module
+  instead of re-loading them needs an unreleased Poly/ML (module dependencies, master
+  2026) and weeks of `src/Pure` work (session-unique theory ids, data kinds and serials;
+  export and replay of registries such as `Context.kinds` and `Thy_Info`); see
+  [heap-merge-spike.md](heap-merge-spike.md).
 - Smaller points: the proof-cache database is never cleaned up; distributed builds
   (exchange directory local to the build host) and the GUI `-R D` path are untested.
