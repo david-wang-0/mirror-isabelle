@@ -1,0 +1,11 @@
+(* Demo of multi-parent sessions and the proof cache: see README.md and run.sh.
+   Merge/Demo.thy and Base/Demo.thy are identical (a theory file belongs to one session). *)
+
+chapter Demo
+
+session Demo_Merge in Merge = Jordan_Normal_Form + "HOL-Probability" +
+  theories Demo
+
+session Demo_Base in Base = Jordan_Normal_Form +
+  sessions "HOL-Probability"
+  theories Demo

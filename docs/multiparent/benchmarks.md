@@ -129,3 +129,58 @@ a heap that later sessions can build on without re-loading B again. A merge pays
 elapsed time when the re-loaded chain is proof-heavy (toy `MPT_C`: 18 s → 0.1 s) or when
 cores are scarce; it always re-loads all of C's chain, whereas a `sessions` import loads
 only the theories it needs.
+
+## Demo
+
+[`demo/`](../../demo/README.md): `Demo_Merge = Jordan_Normal_Form + "HOL-Probability"`
+against the stock `Demo_Base = Jordan_Normal_Form + sessions "HOL-Probability"`, both with
+the same `Demo.thy` (imports `Jordan_Normal_Form.Jordan_Normal_Form_Uniqueness` and
+`HOL-Probability.Probability`); `demo/run.sh` runs the builds and prints the table.
+
+The pair was chosen by measurement. Candidate merges with a trivial child theory importing
+both sides, `-v -o threads=8`, theory-processing `Timing` of the merge session (elapsed /
+cpu); "checked" is a run with no trusted theory (equivalent to stock checking; some of
+these ran while the test suite was running on the same machine), "cached" a `-c` rerun:
+
+| merge (re-loaded part) | checked | cached | trusted |
+|---|---|---|---|
+| `HOL-Probability+HOL-Algebra` (`HOL-Algebra`) | 86.8 s / 450 s | 56.7 s / 101 s | 75/75 |
+| `HOL-Probability+Jordan_Normal_Form` (`HOL-Algebra`, `Jordan_Normal_Form` and the theories it imports from `Polynomial_Factorization` etc.) | 220.8 s / 1189 s | 106.6 s / 234 s | 168/168 |
+| `Jordan_Normal_Form+HOL-Probability` (`HOL-Analysis`, `HOL-Probability`) | 328.2 s / 2086 s | 90.8 s / 238 s | 171/171 |
+
+`HOL-Algebra` alone is too small and its cached re-load is dominated by elaboration (57 s);
+`HOL-Analysis` is proof-bound (its own build: 362 s / 2313 s, factor 6.4 on 8 threads),
+so skipping its proofs saves most of its elapsed time. Hence `Jordan_Normal_Form` (a
+142 MB heap that does not contain `HOL-Analysis`) is the left parent and `HOL-Probability`
+the right one. The other orientation is the better stock choice (it re-checks less) but
+still loses to either merge with the cache.
+
+Demo results (2026-10-19, two runs of `demo/run.sh`, machine otherwise idle; wall-clock of
+the whole `isabelle build` command, which includes about 13 s of start-up; `Finished` line
+of the session from run 1):
+
+| build | wall-clock (run 1, run 2) | session: elapsed / cpu | trusted |
+|---|---|---|---|
+| merge, proof cache | 118 s, 122 s | merge 1:37 / 4:09 | 171/171 |
+| merge, `proof_cache=false` | 334 s, 339 s | merge 5:09 / 30:21 | — |
+| baseline, proof cache | 101 s, 97 s | `Demo_Base` 1:23 / 3:43 | 170/171, 171/171 |
+| baseline, `proof_cache=false` (stock) | 318 s, 305 s | `Demo_Base` 4:58 / 31:09 | — |
+| `Demo_Merge` again, merge heap current | 16 s, 16 s | `Demo_Merge` 0:03 / 0:03 | 1/1 |
+
+Theory-processing `Timing` (run 1, run 2): merge with the cache 82.0 s / 216.9 s and
+85.8 s / 226.1 s; without 272.8 s / 1738.5 s and 276.7 s / 1768.1 s; baseline with the
+cache 81.3 s / 218.0 s and 77.1 s / 193.1 s; stock 295.1 s / 1859.2 s and 282.5 s /
+1784.2 s. Commands (`-d demo -v -o threads=8` on every call):
+
+```
+isabelle build -b -o proof_cache=false Jordan_Normal_Form
+isabelle build -b HOL-Probability
+isabelle build -c Jordan_Normal_Form+HOL-Probability Demo_Merge
+isabelle build -c -o proof_cache=false Jordan_Normal_Form+HOL-Probability Demo_Merge
+isabelle build -c Demo_Base
+isabelle build -c -o proof_cache=false Demo_Base
+isabelle build -c Demo_Merge
+```
+
+(Here `HOL-Probability` was built with `proof_cache=false` too, and the first merge with
+the cache, `0/171` trusted, certified its theories.)

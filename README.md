@@ -23,6 +23,7 @@ Headline (8 threads, laptop): re-loading all of `HOL-Library` on top of `HOL-Car
 (merge `HOL-Cardinals+HOL-Library`) takes 39 s elapsed / 136 s cpu with the proof cache,
 77 s / 485 s without it. See [benchmarks](docs/multiparent/benchmarks.md), including an AFP
 pair where the cache cuts cpu time by a factor of 3 but hardly the elapsed time.
+[Demo](demo/README.md): `Jordan_Normal_Form + "HOL-Probability"` takes 2 min once, then 16 s per build (stock: 5.2 min every build).
 
 ## Trying it
 
