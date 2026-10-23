@@ -5,13 +5,14 @@
 "use strict";
 
 import { EventEmitter, MarkdownString, ThemeColor, ThemeIcon, TreeDataProvider, TreeItem,
-  TreeItemCollapsibleState, TreeView, Uri } from "vscode"
+  TreeItemCheckboxState, TreeItemCollapsibleState, TreeView, Uri } from "vscode"
 import { LanguageClient } from "vscode-languageclient/node"
 
 import * as lsp from "./lsp"
 
 
 export const view_type = "isabelle-theories"
+export const purge_command = "isabelle.theories-purge"
 
 
 /* status presentation */
@@ -86,6 +87,12 @@ export class Provider implements TreeDataProvider<lsp.Theory_Status>
   {
     this._view = view
     view.onDidChangeVisibility(event => { if (event.visible) this.request() })
+    view.onDidChangeCheckboxState(event =>
+    {
+      for (const [theory, state] of event.items) {
+        this.set_required(theory, state === TreeItemCheckboxState.Checked)
+      }
+    })
     this.update_description()
   }
 
@@ -100,6 +107,25 @@ export class Provider implements TreeDataProvider<lsp.Theory_Status>
   {
     if (this._language_client) {
       this._language_client.sendNotification(lsp.theories_request_type)
+    }
+  }
+
+  /* required for continuous checking (cf. jEdit Document_Model.node_required) */
+
+  public set_required(theory: lsp.Theory_Status, required: boolean)
+  {
+    if (this._language_client) {
+      this._language_client.sendNotification(lsp.theories_set_required_type,
+        { uri: theory.uri, required: required })
+    }
+  }
+
+  /* remove theories that are no longer required (cf. jEdit Theories_Dockable) */
+
+  public purge()
+  {
+    if (this._language_client) {
+      this._language_client.sendNotification(lsp.theories_purge_type)
     }
   }
 
@@ -130,6 +156,10 @@ export class Provider implements TreeDataProvider<lsp.Theory_Status>
     item.description = status_description(theory)
     item.iconPath = status_icon(theory)
     item.tooltip = status_tooltip(theory)
+    item.checkboxState = {
+      state: theory.required ? TreeItemCheckboxState.Checked : TreeItemCheckboxState.Unchecked,
+      tooltip: "Required for continuous checking"
+    }
     item.command = { command: "vscode.open", title: "Open Theory", arguments: [uri] }
     return item
   }

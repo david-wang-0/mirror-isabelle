@@ -276,6 +276,17 @@ export const theories_request_type =
 export const theories_status_type =
   new NotificationType<Theories_Status>("PIDE/theories_status");
 
+export interface Theories_Set_Required {
+  uri: string;
+  required: boolean;
+}
+
+export const theories_set_required_type =
+  new NotificationType<Theories_Set_Required>("PIDE/theories_set_required");
+
+export const theories_purge_type =
+  new NotificationType<void>("PIDE/theories_purge");
+
 
 /* spell checker */
 

@@ -225,6 +225,26 @@ class Language_Server(
   }
 
 
+  /* theories */
+
+  private def theories_set_required(file: JFile, required: Boolean): Unit =
+    if (resources.set_node_required(file, required)) {
+      editor.invoke()
+      theories.refresh()
+    }
+
+  private def theories_purge(): Unit = {
+    val purged = resources.flush_input(session, channel, purge = true)
+    if (purged.nonEmpty) {
+      for (file <- purged) channel.write(LSP.PublishDiagnostics(file, Nil))
+      file_watcher.purge(
+        resources.get_models().iterator.map(model =>
+          resources.node_file(model.node_name).getParentFile).toSet)
+    }
+    theories.refresh()
+  }
+
+
   /* caret handling */
 
   private val delay_caret_update: Delay =
@@ -563,6 +583,8 @@ class Language_Server(
           case LSP.Sledgehammer_Locate() => sledgehammer.locate()
           case LSP.Sledgehammer_Sendback(text) => sledgehammer.sendback(text)
           case LSP.Theories_Request() => theories.request()
+          case LSP.Theories_Set_Required(file, required) => theories_set_required(file, required)
+          case LSP.Theories_Purge() => theories_purge()
           case _ => if (!LSP.ResponseMessage.is_empty(json)) log("### IGNORED")
         }
       }

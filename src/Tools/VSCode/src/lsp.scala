@@ -795,4 +795,18 @@ object LSP {
       Notification("PIDE/theories_status",
         JSON.Object("phase" -> phase, "theories" -> theories))
   }
+
+  object Theories_Set_Required {
+    def unapply(json: JSON.T): Option[(JFile, Boolean)] =
+      json match {
+        case Notification("PIDE/theories_set_required", Some(params)) =>
+          for {
+            uri <- JSON.string(params, "uri") if Url.is_wellformed_file(uri)
+            required <- JSON.bool(params, "required")
+          } yield (Url.absolute_file(uri), required)
+        case _ => None
+      }
+  }
+
+  object Theories_Purge extends Notification0("PIDE/theories_purge")
 }

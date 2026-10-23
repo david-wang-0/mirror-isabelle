@@ -254,7 +254,8 @@ export async function activate(context: ExtensionContext)
     const theories_view =
       window.createTreeView(theories_treeview.view_type, { treeDataProvider: theories_provider })
     theories_provider.init(theories_view)
-    context.subscriptions.push(theories_view)
+    context.subscriptions.push(theories_view,
+      commands.registerCommand(theories_treeview.purge_command, () => theories_provider.purge()))
 
     language_client.onReady().then(() => theories_provider.setup(language_client))
 

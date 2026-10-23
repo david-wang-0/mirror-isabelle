@@ -104,6 +104,12 @@
                 }
             },
             {
+                "command": "isabelle.theories-purge",
+                "title": "Purge Theories",
+                "category": "Isabelle",
+                "icon": "$(clear-all)"
+            },
+            {
                 "command": "isabelle.include-word",
                 "title": "Include word",
                 "category": "Isabelle"
@@ -130,6 +136,13 @@
             }
         ],
         "menus": {
+            "view/title": [
+                {
+                    "when": "view == isabelle-theories",
+                    "command": "isabelle.theories-purge",
+                    "group": "navigation"
+                }
+            ],
             "editor/title": [
                 {
                     "when": "editorLangId == isabelle",

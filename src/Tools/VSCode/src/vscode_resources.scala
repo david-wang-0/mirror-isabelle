@@ -206,6 +206,14 @@ extends Resources(session_background, log = log) {
         case Some(model) => (true, st.update_models(Some(file -> model.external(true))))
       })
 
+  def set_node_required(file: JFile, required: Boolean): Boolean =
+    state.change_result(st =>
+      st.models.get(file) match {
+        case Some(model) if model.is_theory && model.node_required != required =>
+          (true, st.update_models(Some(file -> model.set_node_required(required))))
+        case _ => (false, st)
+      })
+
   def sync_models(changed_files: Set[JFile]): Unit =
     state.change { st =>
       val changed_models =
@@ -269,8 +277,12 @@ extends Resources(session_background, log = log) {
 
   /* pending input */
 
-  def flush_input(session: VSCode_Session, channel: Channel): Unit = {
-    state.change { st =>
+  def flush_input(
+    session: VSCode_Session,
+    channel: Channel,
+    purge: Boolean = false
+  ): List[JFile] = {
+    state.change_result { st =>
       val changed_models =
         (for {
           file <- st.pending_input.iterator
@@ -279,12 +291,49 @@ extends Resources(session_background, log = log) {
             model.flush_edits(st.document_blobs, file, st.get_caret(file))
         } yield (edits, (file, model1))).toList
 
-      session.update(st.document_blobs, changed_models.flatMap(_._1))
+      val models1 = st.models ++ changed_models.iterator.map(_._2)
 
-      st.copy(
-        models = st.models ++ changed_models.iterator.map(_._2),
-        pending_input = Set.empty)
+      val purged =
+        if (purge) {
+          val touched_files =
+            (for ((file, model) <- st.models.iterator if model.pending_edits.nonEmpty)
+              yield file).toSet
+          purge_models(models1, touched_files)
+        }
+        else Nil
+      val purged_files = purged.map(_._1)
+
+      session.update(st.document_blobs, changed_models.flatMap(_._1) ::: purged.flatMap(_._2))
+
+      (purged_files,
+        st.copy(
+          models = models1 -- purged_files,
+          pending_input = Set.empty,
+          pending_output = st.pending_output -- purged_files))
     }
+  }
+
+
+  /* purge theories that are no longer needed (cf. jEdit Document_Model.flush_edits) */
+
+  private def purge_models(
+    models: Map[JFile, VSCode_Model],
+    touched_files: Set[JFile]
+  ): List[(JFile, List[Document.Edit_Text])] = {
+    val purged =
+      (for ((file, model) <- models.iterator if model.is_theory)
+        yield (file, model, if (touched_files(file)) None else model.purge_edits)).toList
+
+    val retain = {
+      val open_nodes =
+        for ((_, model, _) <- purged if !model.external_file) yield model.node_name
+      val pending_nodes =
+        for ((_, model, edits) <- purged if edits.isEmpty) yield model.node_name
+      dependencies((open_nodes ::: pending_nodes).map((_, Position.none))).theories.toSet
+    }
+
+    for (case (file, model, Some(edits)) <- purged if !retain(model.node_name))
+      yield (file, edits)
   }
 
 

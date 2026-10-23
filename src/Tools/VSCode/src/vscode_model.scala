@@ -53,6 +53,13 @@ object VSCode_Model {
     node_name: Document.Node.Name
   ): VSCode_Model = {
     val content = Content(node_name, Line.Document.empty)
+    /*
+      As in jEdit (File_Model.init), only files of a theory-producing file format
+      are required by default; ordinary theories are checked when visible (caret
+      perspective) or imported. The "Theories" view lets the user change this per
+      theory (VSCode_Resources.set_node_required), and "Purge" removes closed
+      theories that are neither required nor imported.
+    */
     val is_theory = File_Format.registry.is_theory(node_name)
     VSCode_Model(session, editor, content, node_required = is_theory)
   }
@@ -87,6 +94,11 @@ sealed case class VSCode_Model(
   def external(b: Boolean): VSCode_Model = copy(external_file = b)
 
   def node_visible: Boolean = !external_file
+
+
+  /* required */
+
+  def set_node_required(b: Boolean): VSCode_Model = copy(node_required = b)
 
 
   /* header */
@@ -190,6 +202,17 @@ sealed case class VSCode_Model(
     }
     else None
   }
+
+
+  /* purge: removal of a theory that is no longer needed (cf. jEdit File_Model) */
+
+  def purge_edits: Option[List[Document.Edit_Text]] =
+    if (!is_theory || !external_file || pending_edits.nonEmpty || node_required ||
+        !Document.Node.Perspective_Text.is_empty(last_perspective)) None
+    else {
+      val text_edits = List(Text.Edit.remove(0, content.text))
+      Some(node_edits(Document.Node.no_header, text_edits, Document.Node.Perspective_Text.empty))
+    }
 
 
   /* publish annotations */
