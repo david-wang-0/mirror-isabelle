@@ -173,6 +173,7 @@ class Language_Server(
   def ml_settings: ML_Settings = session.store.ml_settings
 
   private val sledgehammer = new VSCode_Sledgehammer(server)
+  private val theories = new VSCode_Theories(server)
 
   def rendering_offset(node_pos: Line.Node_Position): Option[(VSCode_Rendering, Text.Offset)] =
     for {
@@ -343,6 +344,7 @@ class Language_Server(
 
       dynamic_output.init()
       sledgehammer.init()
+      theories.init()
 
       try {
         Isabelle_Process.start(
@@ -372,6 +374,7 @@ class Language_Server(
         delay_caret_update.revoke()
         delay_preview.revoke()
         sledgehammer.exit()
+        theories.exit()
 
         val result = session.stop()
         if (result.ok) reply("")
@@ -559,6 +562,7 @@ class Language_Server(
           case LSP.Sledgehammer_Cancel() => sledgehammer.cancel()
           case LSP.Sledgehammer_Locate() => sledgehammer.locate()
           case LSP.Sledgehammer_Sendback(text) => sledgehammer.sendback(text)
+          case LSP.Theories_Request() => theories.request()
           case _ => if (!LSP.ResponseMessage.is_empty(json)) log("### IGNORED")
         }
       }

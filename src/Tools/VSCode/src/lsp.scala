@@ -784,4 +784,15 @@ object LSP {
           "character" -> node_pos.pos.column,
           "text" -> text))
   }
+
+
+  /* theories */
+
+  object Theories_Request extends Notification0("PIDE/theories_request")
+
+  object Theories_Status {
+    def apply(phase: String, theories: List[JSON.T]): JSON.T =
+      Notification("PIDE/theories_status",
+        JSON.Object("phase" -> phase, "theories" -> theories))
+  }
 }
