@@ -50,6 +50,11 @@
                     "id": "isabelle-documentation",
                     "title": "Documentation",
                     "icon":"./media/documentation-panel.svg"
+                },
+                {
+                    "id": "isabelle-theories",
+                    "title": "Theories",
+                    "icon": "./media/theories-panel.svg"
                 }
             ]
         },
@@ -59,6 +64,9 @@
             ],
             "isabelle-documentation": [
                 { "id": "isabelle-documentation", "name": "Documentation", "type": "webview", "icon": "./media/documentation-panel.svg" }
+            ],
+            "isabelle-theories": [
+                { "id": "isabelle-theories", "name": "Theories", "type": "tree", "icon": "./media/theories-panel.svg" }
             ],
             "isabelle-sledgehammer": [
                 { "id": "isabelle-sledgehammer", "name": "Sledgehammer", "type": "webview" , "icon": "./media/sledgehammer-panel.svg" }

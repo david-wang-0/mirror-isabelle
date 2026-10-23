@@ -245,6 +245,38 @@ export const sledgehammer_output_type =
   new NotificationType<Sledgehammer_Output>("PIDE/sledgehammer_output");
 
 
+/* theories */
+
+export interface Theory_Status {
+  name: string;
+  base_name: string;
+  uri: string;
+  overall: "ok" | "failed" | "pending";
+  required: boolean;
+  ok: boolean;
+  total: number;
+  unprocessed: number;
+  running: number;
+  warned: number;
+  failed: number;
+  finished: number;
+  canceled: boolean;
+  consolidated: boolean;
+  percentage: number;
+}
+
+export interface Theories_Status {
+  phase: string;
+  theories: Array<Theory_Status>;
+}
+
+export const theories_request_type =
+  new NotificationType<void>("PIDE/theories_request");
+
+export const theories_status_type =
+  new NotificationType<Theories_Status>("PIDE/theories_status");
+
+
 /* spell checker */
 
 export const include_word_type =

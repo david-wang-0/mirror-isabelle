@@ -8,6 +8,7 @@ media/Preview_inverse.svg
 media/documentation-panel.svg
 media/symbol-panel.svg
 media/sledgehammer-panel.svg
+media/theories-panel.svg
 media/output-panel.svg
 media/PreviewOnRightPane_16x_dark.svg
 media/PreviewOnRightPane_16x.svg
@@ -37,6 +38,7 @@ src/sledgehammer_panel.ts
 src/state_panel.ts
 src/symbol.ts
 src/symbol_panel.ts
+src/theories_treeview.ts
 src/vscode_lib.ts
 test/extension.test.ts
 test/index.ts

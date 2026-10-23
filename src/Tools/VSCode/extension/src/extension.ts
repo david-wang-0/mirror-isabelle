@@ -22,6 +22,7 @@ import { Output_View_Provider } from './output_view'
 import { Symbols_Panel_Provider } from './symbol_panel'
 import { Documentation_Panel_Provider } from './documentation_panel'
 import { Sledgehammer_Panel_Provider } from './sledgehammer_panel'
+import * as theories_treeview from './theories_treeview'
 import { register_script_decorations } from './script_decorations'
 
 
@@ -245,6 +246,17 @@ export async function activate(context: ExtensionContext)
       language_client.onNotification(lsp.sledgehammer_provers_response_type, msg =>
         sledgehammer_provider.update_provers(msg.provers))
     })
+
+
+    /* theories */
+
+    const theories_provider = new theories_treeview.Provider()
+    const theories_view =
+      window.createTreeView(theories_treeview.view_type, { treeDataProvider: theories_provider })
+    theories_provider.init(theories_view)
+    context.subscriptions.push(theories_view)
+
+    language_client.onReady().then(() => theories_provider.setup(language_client))
 
 
     /* state panel */
